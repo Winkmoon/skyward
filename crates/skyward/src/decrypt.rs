@@ -18,7 +18,8 @@ use skyward_crypto::keymint::KeyMint;
 use skyward_sys::worker::Worker;
 use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 pub enum Job {
     /// Open the partition as far as it opens with nothing a user knows.
@@ -92,6 +93,14 @@ const LIBRARIES: &str = "/system/lib64:/vendor/lib64:/vendor/lib64/hw:/system/li
 /// filesystem, and the keys the engine installs into it, from being let go.
 const KEEPING: &str = "/tmp/skyward-data";
 
+/// How long the engine gets to install the keys that open the partition
+/// without a credential. It installs them in its first round, then goes on
+/// to the user's own files and retries there for minutes on a phone whose
+/// files it cannot open with nothing: the opening ends with what the first
+/// round opened, so the engine is taken off the clock as soon as it has
+/// done that.
+const OPENING_DEADLINE: Duration = Duration::from_secs(45);
+
 /// The exit the engine gives for a credential that did not open the user's
 /// secret.
 const WRONG_CREDENTIAL: i32 = 2;
@@ -115,11 +124,17 @@ fn let_data_go(kept: PathBuf) {
     let _ = skyward_block::mount::umount(&kept);
 }
 
+/// Start what the engine needs, which is the one script the phone's own
+/// third-party recovery shipped: the secure world's daemon, the hardware
+/// service directory and the credential and key services of the older kind.
+/// It leaves what it starts running, and starts nothing that runs already.
+fn prepare() {
+    let _ = Command::new("/system/bin/sh").arg(PREPARE).status();
+}
+
 /// What the engine is started with, and what it said.
 fn run(engine: &Path, credential: &str) -> Result<Output, String> {
-    // The script is idempotent: every part it starts it starts only where
-    // that part does not run.
-    let _ = Command::new("/system/bin/sh").arg(PREPARE).status();
+    prepare();
     Command::new(engine)
         .arg(credential)
         .env("LD_LIBRARY_PATH", LIBRARIES)
@@ -127,6 +142,38 @@ fn run(engine: &Path, credential: &str) -> Result<Output, String> {
         .current_dir("/")
         .output()
         .map_err(|e| format!("start {}: {e}", engine.display()))
+}
+
+/// Run the engine with no credential, and take it off the clock once it has
+/// had `OPENING_DEADLINE` to install the keys that open the partition
+/// without one: the rest of its work is the user's own files, which it will
+/// not open with nothing to open them with.
+fn run_opening(engine: &Path) -> Result<(), String> {
+    prepare();
+    let mut child = Command::new(engine)
+        .arg("")
+        .env("LD_LIBRARY_PATH", LIBRARIES)
+        .env("PATH", "/system/bin:/vendor/bin")
+        .current_dir("/")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("start {}: {e}", engine.display()))?;
+    let until = Instant::now() + OPENING_DEADLINE;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {
+                if Instant::now() >= until {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => return Err(format!("wait for {}: {e}", engine.display())),
+        }
+    }
 }
 
 /// What the engine's last words were, for the page.
@@ -153,24 +200,19 @@ fn said(output: &Output) -> String {
 fn engine_open(engine: &Path) -> Result<Opening, String> {
     let mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
     let kept = keep_data()?;
-    let output = run(engine, "")?;
+    run_opening(engine)?;
     let de = Path::new("/data/misc/vold/user_keys/de");
     let readable = std::fs::read_dir(de).is_ok();
     let closed = if readable { data::closed_users().map_err(|e| format!("{e:#}"))? } else { Vec::new() };
     let_data_go(kept);
     if !readable {
-        return Err(match output.status.code() {
-            Some(code) if code == WRONG_CREDENTIAL => {
-                format!("the key engine opened nothing: {}", said(&output))
-            }
-            _ => format!("the key engine ended with {}: {}", output.status, said(&output)),
-        });
+        return Err("the phone's key engine opened nothing: its secure world did not answer".to_string());
     }
     // A phone whose data opens with no credential has no user the recovery
     // could unlock: the engine's first keys came in, and there is nothing
     // left that a credential would open. Say so, rather than showing a page
     // that asks for one and then opens nothing.
-    if closed.is_empty() && !output.status.success() {
+    if closed.is_empty() {
         return Err(
             "this phone has no screen lock, and this recovery cannot open a data partition \
              without one. Set a PIN or password in Android, then come back: the recovery will \
