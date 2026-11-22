@@ -22,6 +22,8 @@ mod keys;
 #[cfg(target_os = "android")]
 mod merge;
 #[cfg(target_os = "android")]
+mod panel;
+#[cfg(target_os = "android")]
 mod partwork;
 #[cfg(target_os = "android")]
 mod pty;
@@ -771,6 +773,9 @@ fn adopt_installed_version(props: &std::collections::HashMap<String, String>) ->
 fn recovery() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let run = || -> Result<()> {
+        // The panel the phone was built with is described by the kernel
+        // image the bootloader loaded; settle it before anything is drawn.
+        panel::settle();
         // Open to the programs the recovery runs as other users, the
         // supplicant among them, whatever the umask.
         std::fs::create_dir_all(skyward_sys::RUN).with_context(|| format!("make {}", skyward_sys::RUN))?;

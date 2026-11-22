@@ -9,7 +9,7 @@ bootloader reads:
 
   * parses an Android boot image header v2 (kernel / ramdisk / second /
     recovery_dtbo / dtb sections), keeping the kernel and device tree as they
-    are;
+    are, or putting the kernel given with --kernel in their place;
   * decompresses the gzip'd ramdisk cpio, edits it in place (drops the TWRP
     leftovers, installs the Skyward binary, its configuration, fonts and the
     commands it answers), and compresses it again;
@@ -435,6 +435,7 @@ def avb_footed(image, partition, partition_size):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--stock", required=True, help="whole recovery partition image")
+    p.add_argument("--kernel", help="kernel image to put in, gzip'd if not gzip already")
     p.add_argument("--binary", required=True, help="skyward built for the phone")
     p.add_argument("--system-init", required=True)
     p.add_argument("--config", required=True, help="devices/<codename>.toml")
@@ -467,6 +468,16 @@ def main():
     img = parse_boot_image(stock)
     print("boot header v2: page %d, kernel %d, ramdisk %d, dtb %d" %
           (img["page_size"], len(img["kernel"]), len(img["ramdisk"]), len(img["dtb"])))
+    if a.kernel:
+        kernel = read(a.kernel)
+        if kernel[:2] != b"\x1f\x8b":
+            import gzip as _gzip
+            buf = io.BytesIO()
+            with _gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=9, mtime=0, filename="") as g:
+                g.write(kernel)
+            kernel = buf.getvalue()
+        img["kernel"] = kernel
+        print("kernel: %d bytes, sha256 %s" % (len(kernel), hashlib.sha256(kernel).hexdigest()))
 
     ramdisk = edit_ramdisk(img["ramdisk"], a)
     image = build_boot_image(img, ramdisk)
