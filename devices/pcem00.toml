@@ -34,12 +34,16 @@ mounted = ["persist", "nvdata"]
 path = "/system/bin/hwservicemanager"
 ready_property = "hwservicemanager.ready"
 
-# MediaTek's connectivity chip: wmt_loader loads the WMT firmware, then
-# wmt_launcher and wlan_assistant bring up the WLAN driver and its
+# MediaTek's connectivity chip: wmt_loader loads the WMT firmware and makes
+# /dev/wmtWifi. The check keeps it from running again once the node is
+# there, which a start of the recovery service after an earlier one leaves.
+# wmt_launcher and wlan_assistant then bring up the WLAN driver and its
 # calibration from /vendor/firmware and nvdata. Writing 1 to /dev/wmtWifi
 # (the WLAN page's first write) powers the chip on and makes wlan0.
 [[service]]
-path = "/vendor/bin/wmt_loader"
+path = "/system/bin/sh"
+args = ["-c", "[ -e /dev/wmtWifi ] || exec /vendor/bin/wmt_loader"]
+oneshot = true
 
 [[service]]
 path = "/vendor/bin/wmt_launcher"
