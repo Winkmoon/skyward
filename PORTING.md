@@ -78,6 +78,14 @@ adb reboot recovery
   TWRP script is involved.
 * **no super** — `snapshot_state()` is `None` on a phone without a super
   partition, so the home page does not warn about an update it cannot read.
+* **one slot, every page** — the pages that ask the phone's slots for
+  partitions have a path of their own where there is one slot: the mount page
+  lists the installed system's partitions (system, system_ext, vendor, odm,
+  product) where the phone mounts them and mounts and unmounts them itself; a
+  backup keeps the boot partitions and the installed system's partitions whole,
+  as images, and a restore writes them back; the update page, which merges an
+  update between two slots, is not offered at all; and re-labeling reads the
+  installed system's own rules from its partitions.
 * **language** — the pages keep their settings on the metadata partition,
   which this phone's recovery cannot mount, so no language is ever chosen and
   the pages would fall back to the installed system's `en-US`.
