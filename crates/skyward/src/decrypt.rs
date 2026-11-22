@@ -166,6 +166,18 @@ fn engine_open(engine: &Path) -> Result<Opening, String> {
             _ => format!("the key engine ended with {}: {}", output.status, said(&output)),
         });
     }
+    // A phone whose data opens with no credential has no user the recovery
+    // could unlock: the engine's first keys came in, and there is nothing
+    // left that a credential would open. Say so, rather than showing a page
+    // that asks for one and then opens nothing.
+    if closed.is_empty() && !output.status.success() {
+        return Err(
+            "this phone has no screen lock, and this recovery cannot open a data partition \
+             without one. Set a PIN or password in Android, then come back: the recovery will \
+             ask for it."
+                .to_string(),
+        );
+    }
     Ok(Opening { mounted, closed })
 }
 
