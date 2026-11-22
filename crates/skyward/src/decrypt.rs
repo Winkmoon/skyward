@@ -76,13 +76,6 @@ impl Decryptor {
     }
 }
 
-/// The script that starts what the phone's key engine needs: the secure
-/// world's daemon, the hardware service directory and the credential and key
-/// services of the older kind. It is the one the phone's own third-party
-/// recovery shipped, it leaves what it starts running, and it starts
-/// nothing that runs already.
-const PREPARE: &str = "/system/bin/twrp-fbedec-prep.sh";
-
 /// Where the engine's programs look for their libraries: the recovery's own,
 /// the vendor partition's, and each one's hardware modules. The vendor's
 /// credential module needs its own folder, and a half-given list leaves it
@@ -99,7 +92,7 @@ const KEEPING: &str = "/tmp/skyward-data";
 /// files it cannot open with nothing: the opening ends with what the first
 /// round opened, so the engine is taken off the clock as soon as it has
 /// done that.
-const OPENING_DEADLINE: Duration = Duration::from_secs(45);
+const OPENING_DEADLINE: Duration = Duration::from_secs(30);
 
 /// The exit the engine gives for a credential that did not open the user's
 /// secret.
@@ -124,17 +117,11 @@ fn let_data_go(kept: PathBuf) {
     let _ = skyward_block::mount::umount(&kept);
 }
 
-/// Start what the engine needs, which is the one script the phone's own
-/// third-party recovery shipped: the secure world's daemon, the hardware
-/// service directory and the credential and key services of the older kind.
-/// It leaves what it starts running, and starts nothing that runs already.
-fn prepare() {
-    let _ = Command::new("/system/bin/sh").arg(PREPARE).status();
-}
-
-/// What the engine is started with, and what it said.
+/// What the engine is started with, and what it said. The engine starts what
+/// it needs itself, in every round it runs: the one script the phone's own
+/// third-party recovery shipped, which leaves what it starts running and
+/// starts nothing that runs already.
 fn run(engine: &Path, credential: &str) -> Result<Output, String> {
-    prepare();
     Command::new(engine)
         .arg(credential)
         .env("LD_LIBRARY_PATH", LIBRARIES)
@@ -144,12 +131,12 @@ fn run(engine: &Path, credential: &str) -> Result<Output, String> {
         .map_err(|e| format!("start {}: {e}", engine.display()))
 }
 
-/// Run the engine with no credential, and take it off the clock once it has
-/// had `OPENING_DEADLINE` to install the keys that open the partition
-/// without one: the rest of its work is the user's own files, which it will
-/// not open with nothing to open them with.
+/// Run the engine with no credential, and take it off the clock as soon as
+/// it has installed the keys that open the partition without one: the rest
+/// of its work is the user's own files, which it will not open with nothing
+/// to open them with, and it retries those for minutes. Where the deadline
+/// comes first, the engine is taken off the clock there.
 fn run_opening(engine: &Path) -> Result<(), String> {
-    prepare();
     let mut child = Command::new(engine)
         .arg("")
         .env("LD_LIBRARY_PATH", LIBRARIES)
@@ -159,21 +146,21 @@ fn run_opening(engine: &Path) -> Result<(), String> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("start {}: {e}", engine.display()))?;
+    let de = Path::new("/data/misc/vold/user_keys/de");
     let until = Instant::now() + OPENING_DEADLINE;
     loop {
+        if std::fs::read_dir(de).is_ok() || Instant::now() >= until {
+            break;
+        }
         match child.try_wait() {
-            Ok(Some(_)) => return Ok(()),
-            Ok(None) => {
-                if Instant::now() >= until {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Ok(());
-                }
-                std::thread::sleep(Duration::from_millis(250));
-            }
+            Ok(Some(_)) => break,
+            Ok(None) => std::thread::sleep(Duration::from_millis(250)),
             Err(e) => return Err(format!("wait for {}: {e}", engine.display())),
         }
     }
+    let _ = child.kill();
+    let _ = child.wait();
+    Ok(())
 }
 
 /// What the engine's last words were, for the page.
