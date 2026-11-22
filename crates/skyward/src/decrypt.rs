@@ -108,17 +108,18 @@ fn run(engine: &Path, credential: &str) -> Result<Output, String> {
 
 /// What the engine's last words were, for the page.
 fn said(output: &Output) -> String {
-    let mut lines: Vec<&str> = Vec::new();
+    let mut lines: Vec<String> = Vec::new();
     for stream in [&output.stdout, &output.stderr] {
-        for line in String::from_utf8_lossy(stream).lines() {
+        let text = String::from_utf8_lossy(stream);
+        for line in text.lines() {
             let line = line.trim();
             if !line.is_empty() {
-                lines.push(line);
+                lines.push(line.to_string());
             }
         }
     }
-    let tail: Vec<&str> = lines.iter().rev().take(3).copied().collect();
-    tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
+    let tail: Vec<String> = lines.iter().rev().take(3).rev().cloned().collect();
+    tail.join(" | ")
 }
 
 /// Open the data partition as far as the engine opens it with no credential:
