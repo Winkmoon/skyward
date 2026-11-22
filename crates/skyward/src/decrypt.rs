@@ -88,9 +88,32 @@ const PREPARE: &str = "/system/bin/twrp-fbedec-prep.sh";
 /// loading the software stand-in, which answers every credential wrong.
 const LIBRARIES: &str = "/system/lib64:/vendor/lib64:/vendor/lib64/hw:/system/lib64/hw";
 
+/// Where a second mount of the data partition is made, to keep its
+/// filesystem, and the keys the engine installs into it, from being let go.
+const KEEPING: &str = "/tmp/skyward-data";
+
 /// The exit the engine gives for a credential that did not open the user's
 /// secret.
 const WRONG_CREDENTIAL: i32 = 2;
+
+/// Mount the data partition a second time, so that the filesystem the engine
+/// installs the keys into outlives the engine's own unmount of it: the keys
+/// live with the filesystem, and the engine unmounts and mounts the
+/// partition again as it runs. Without this the filesystem is let go by that
+/// unmount, the keys go with it, and every part of the partition stays as
+/// the ciphertext it is.
+fn keep_data() -> Result<PathBuf, String> {
+    std::fs::create_dir_all(KEEPING).map_err(|e| format!("make {KEEPING}: {e}"))?;
+    skyward_block::mount::bind(Path::new(data::MOUNT), Path::new(KEEPING))
+        .map_err(|e| format!("mount {} again: {e:#}", data::MOUNT))?;
+    Ok(PathBuf::from(KEEPING))
+}
+
+/// Let the second mount of the data partition go, the keys staying with the
+/// engine's own mount of it.
+fn let_data_go(kept: PathBuf) {
+    let _ = skyward_block::mount::umount(&kept);
+}
 
 /// What the engine is started with, and what it said.
 fn run(engine: &Path, credential: &str) -> Result<Output, String> {
@@ -129,9 +152,13 @@ fn said(output: &Output) -> String {
 /// only where those first keys did not come in.
 fn engine_open(engine: &Path) -> Result<Opening, String> {
     let mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
+    let kept = keep_data()?;
     let output = run(engine, "")?;
     let de = Path::new("/data/misc/vold/user_keys/de");
-    if std::fs::read_dir(de).is_err() {
+    let readable = std::fs::read_dir(de).is_ok();
+    let closed = if readable { data::closed_users().map_err(|e| format!("{e:#}"))? } else { Vec::new() };
+    let_data_go(kept);
+    if !readable {
         return Err(match output.status.code() {
             Some(code) if code == WRONG_CREDENTIAL => {
                 format!("the key engine opened nothing: {}", said(&output))
@@ -139,7 +166,6 @@ fn engine_open(engine: &Path) -> Result<Opening, String> {
             _ => format!("the key engine ended with {}: {}", output.status, said(&output)),
         });
     }
-    let closed = data::closed_users().map_err(|e| format!("{e:#}"))?;
     Ok(Opening { mounted, closed })
 }
 
@@ -147,8 +173,11 @@ fn engine_open(engine: &Path) -> Result<Opening, String> {
 /// key the user's credential leads to into the filesystem's keyring, and
 /// checks the credential by the key's own tag: a wrong one installs nothing.
 fn engine_unlock(engine: &Path, credential: Vec<u8>) -> Result<Vec<Closed>, String> {
+    let _mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
     let typed = String::from_utf8_lossy(&credential).into_owned();
+    let kept = keep_data()?;
     let output = run(engine, &typed)?;
+    let_data_go(kept);
     if !output.status.success() {
         return Err(match output.status.code() {
             Some(WRONG_CREDENTIAL) => "the credential is not the one the user's files were locked with".to_string(),
