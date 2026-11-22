@@ -1,8 +1,11 @@
 # Skyward on the OPPO A9x (PCEM00)
 
-This fork ports [Skyward](../README.md) to the OPPO A9x: a MediaTek MT6771
+This fork ports [Skyward](README.md) to the OPPO A9x: a MediaTek MT6771
 phone (MT6771V/CT, MT6631 connectivity) built on the Android 9 era layout the
 OPPO A9 shares, since the two phones are the same hardware inside.
+
+The port, and this fork, are by Xinran (Winkmoon); Skyward itself is by kirklin
+and its contributors.
 
 ## What the phone is
 

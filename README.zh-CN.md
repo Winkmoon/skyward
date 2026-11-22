@@ -82,56 +82,47 @@ Skyward 是使用 Rust 编写的 recovery，从零开始编写。
 
 ![super 中没有系统，也能装回一个系统](slides/zh-CN/out/15-no-system.png)
 
-## 支持的机型
+## 这个适配
 
-| 机型 | 代号 | 测试的系统版本 |
+| 机型 | 型号代码 | 分支 |
 | --- | --- | --- |
-| 小米 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM（Android 17） |
-| 小米 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM（Android 16） |
+| OPPO A9x（以及和它套娃的 A9） | PCEM00 | `OPa9-a9x` |
 
-### 🚧 施工中
+手机是联发科 MT6771（Helio P70），分区布局是 Android 9 时代的样子：A-only，只有一个
+recovery 分区，没有 super。这个适配运行手机自己的内核，直接在 framebuffer 上绘制页面，
+通过厂商自带的 supplicant 打开 Wi-Fi，并用手机自己的 TWRP 适配里的 key engine 打开 data
+分区。适配改了什么、为什么改，写在 [PORTING.md](PORTING.md) 里。
 
-这些机型的镜像按照各自的原厂固件构建，还没有在真机上试过。屏幕、触摸、WLAN 和振动已经配置好。解密 data 分区所需的程序由 Skyward 在手机上从已安装系统的 init 脚本和服务描述中读出，每个机型的读取结果都用原厂固件核对过，这些程序在这些机型上的运行情况还没有验证。
-
-| 机型 | 代号 | 构建所用的系统版本 |
-| --- | --- | --- |
-| 🚧 小米 13 | `fuxi` | OS3.0.309.0.WMCCNXM（Android 16） |
-| 🚧 小米 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM（Android 16） |
-| 🚧 小米 14 | `houji` | OS3.0.307.0.WNCCNXM（Android 16） |
-| 🚧 小米 14 Pro | `shennong` | OS3.0.309.0.WNBCNXM（Android 16） |
-| 🚧 小米 14 Ultra | `aurora` | OS3.0.308.0.WNACNXM（Android 16） |
-| 🚧 小米 15 | `dada` | OS3.0.307.0.WOCCNXM（Android 16） |
-| 🚧 小米 15 Pro | `haotian` | OS3.0.309.0.WOBCNXM（Android 16） |
-| 🚧 小米 15 Ultra | `xuanyuan` | OS3.0.314.0.WOACNXM（Android 16） |
-| 🚧 小米 17 | `pudding` | OS4.0.4.0.XPCCNXM（Android 17） |
-| 🚧 小米 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM（Android 17） |
-| 🚧 小米 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM（Android 17） |
-| 🚧 小米 17 Max | `byron` | OS3.0.310.0.WAFCNXM（Android 16） |
-| 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM（Android 16） |
-| 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM（Android 16） |
-| 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM（Android 16） |
-| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.4.0.XPMCNXM（Android 17） |
-| 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM（Android 16） |
-| 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM（Android 17） |
-| 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM（Android 17） |
+这个适配和这个 fork 由 Xinran（Winkmoon）维护；Skyward 本身由 kirklin 和它的贡献者编写。
 
 ## 安装 Skyward
 
-Skyward 需要已解锁的 bootloader。从 [Releases](https://github.com/kirklin/skyward/releases) 下载对应机型的 zip，每个文件都标有机型和代号，例如 Xiaomi 17 Ultra (nezha)。使用 `SHA256SUMS` 核对并解压之后，在手机处于 fastboot 模式的时候，把其中的镜像刷入当前运行槽位的 recovery 分区：
+手机需要已经解锁 bootloader。从本 fork 的 [Releases](https://github.com/Winkmoon/skyward/releases)
+下载 `skyward-pcem00.zip`，核对其中的 SHA-256，解压后把镜像刷入 recovery 分区。
+
+手机进入 fastboot 模式后：
 
 ```sh
-unzip skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-pcem00.zip
+fastboot flash recovery skyward-pcem00.img
 fastboot reboot recovery
 ```
 
-之后连接 WLAN，就可以在“设置”的“Skyward 更新”页面更新到最新版本，也可以在 Skyward 自己的“安装”页面安装解压出来的新版镜像。打开 **自动重新刷入 Skyward** 之后，系统更新或者刷机包覆盖 recovery 分区的时候，Skyward 会重新刷回这些分区。
+也可以在已经运行的系统里用 root shell，或者在 TWRP、Skyward 自己的终端里：
 
-Skyward 中的 adb 是 root shell，手机上无需授权：手机处于 recovery 的时候，任何人拿到手机和数据线都能访问其中的存储。
+```sh
+adb push skyward-pcem00.img /tmp/recovery.img
+adb shell dd if=/tmp/recovery.img of=/dev/block/by-name/recovery bs=1M
+adb reboot recovery
+```
+
+Skyward 启动后是中文界面。解密 data 分区前，解密页面会要求输入手机的锁屏 PIN；
+没有设置锁屏密码的手机，这个 key engine 打不开，页面会直接说明。Skyward 里的 adb 是
+无需授权的 root shell。这台手机没有 super 分区，因此双系统相关的页面不会出现。
 
 ## 双系统的工作方式
 
-Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系统是 HyperOS 或者第三方 ROM 都可以，并在首页的“双系统”中切换。第二系统的根文件系统是 data 分区中的一个文件，文件系统不能移动或删除它，Skyward 直接通过分区读写其中的内容；两个系统的启动镜像保存在另一个这样的文件中。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，每一步都先记录在 /metadata 中，切换过程中断电的话，Skyward 下次启动时会完成这次切换。vendor_boot、dtbo、recovery、vbmeta、固件和 super 都保持不变，第二系统使用主系统的 vendor_boot 和 dtbo 启动。
+Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系统是手机自带的系统或者第三方 ROM 都可以，并在首页的“双系统”中切换。第二系统的根文件系统是 data 分区中的一个文件，文件系统不能移动或删除它，Skyward 直接通过分区读写其中的内容；两个系统的启动镜像保存在另一个这样的文件中。切换系统只改写下次启动槽位的 boot 和 init_boot 分区，每一步都先记录在 /metadata 中，切换过程中断电的话，Skyward 下次启动时会完成这次切换。vendor_boot、dtbo、recovery、vbmeta、固件和 super 都保持不变，第二系统使用主系统的 vendor_boot 和 dtbo 启动。
 
 其他操作写入启动分区之前，Skyward 会先把主系统的启动镜像写回：安装、切换启动槽位、fastboot、恢复出厂设置，以及备份或恢复启动分区。系统更新尚未合并的时候，暂不切换到第二系统；备份 data 分区的时候不包含第二系统。
 
@@ -146,7 +137,7 @@ Skyward 可以在手机自身分区中的系统旁边安装第二系统，主系
 
 没有自带 init_boot 镜像的系统，从 Skyward 生成的 init_boot 镜像启动。其中的程序按照主系统第一阶段的方式加载第一阶段的内核模块，包括模块之间的软依赖和内核命令行中给模块的参数，然后在 data 分区中找到根文件系统，挂载之后运行其中的 `init`。启动过程中出现任何错误，这个程序都会进入 Skyward，和主系统启动失败时进入 recovery 一样：它在 misc 中留下原因，把当前槽位 recovery 分区中的 ramdisk 按照 bootloader 启动 recovery 时内核解包的方式解包到自己的 ramdisk 上，然后交给 Skyward 的第一个程序运行，所以无论 bootloader 怎样处理重启，都能进入 Skyward。Skyward 显示原因；用户在“双系统”中切换之前，下次启动的仍是第二系统。启动长时间没有进展时，这个程序改为重启到 recovery；交给第二系统之前手机重启的话，下次启动时它会在 misc 中看到同样的请求，先进入 Skyward。两种方式都无法进入 Skyward 时，手机停留在出错的地方，不会反复启动同一个系统。自带第一阶段 ramdisk 的系统可以运行 Skyward 放在 `/skyward/map` 的程序，它把根文件系统映射为块设备，并输出设备节点的路径。每次切换到第二系统，Skyward 都用自己带的程序写入第二系统的 init_boot 镜像，所以更新 Skyward 以后，第二系统也用新的程序启动。
 
-正在运行的系统也可以请求切换：在 misc 中写入 `boot-recovery` 和 `--switch_system=installed`，或者 `--switch_system=` 加上第二系统的 `id`，然后重启到 recovery。bootloader 仍然启动这个槽位的话（小米 13 Ultra 连着 USB 线时可能这样），Skyward 的程序会在下次启动时在 misc 中看到这个请求，先进入 Skyward。
+正在运行的系统也可以请求切换：在 misc 中写入 `boot-recovery` 和 `--switch_system=installed`，或者 `--switch_system=` 加上第二系统的 `id`，然后重启到 recovery。bootloader 仍然启动这个槽位的话（部分 bootloader 连着 USB 线时可能这样），Skyward 的程序会在下次启动时在 misc 中看到这个请求，先进入 Skyward。
 
 ## 构建
 
@@ -163,25 +154,23 @@ cargo build --release -p skyward-pack
 RUSTFLAGS="-C target-feature=+crt-static" cargo ndk -t arm64-v8a --platform 30 build --release -p skyward-system-init --target-dir target/system-init
 ```
 
-打包工具从小米服务器上这个版本的完整更新包中取出原厂 recovery 分区，只读取这个分区所在的部分，并且按照设备配置文件核对 SHA-256：
+本 fork 的 recovery 镜像由 GitHub Actions 在每次推送到 `OPa9-a9x` 分支时构建，同样的步骤也可以在电脑上手动执行。原厂 recovery 分区镜像保存在 `stock/pcem00/recovery.img`，内核保存在 `stock/pcem00/Image.gz`；`tools/pack_recovery.py` 会替换原厂镜像里的 ramdisk，并补上 AVB hash footer：
 
 ```sh
-target/release/skyward-pack stock --config devices/nezha.toml --out target/stock/nezha/recovery.img
-```
-
-然后在它的基础上构建镜像：
-
-```sh
-target/release/skyward-pack recovery \
-  --stock target/stock/nezha/recovery.img \
+python3 tools/pack_recovery.py \
+  --stock stock/pcem00/recovery.img \
+  --kernel stock/pcem00/Image.gz \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
-  --config devices/nezha.toml \
+  --config devices/pcem00.toml \
   --font resources/fonts/NotoSansSC-Regular.ttf \
+  --font-license resources/fonts/NotoSansSC-OFL.txt \
   --mono resources/fonts/KirkMono-Regular.ttf \
   --mono-license resources/fonts/KirkMono-OFL.txt \
-  --out target/skyward-nezha.img
+  --out out/skyward-pcem00.img
 ```
+
+这台手机上打包需要注意的事情——LK 为 ramdisk 留的空间、boot header v2、AVB footer——都写在 [PORTING.md](PORTING.md) 里。
 
 测试和代码检查在电脑上运行；只在手机上运行的代码按照手机目标检查：
 
@@ -212,3 +201,6 @@ cargo run --release -p skyward-preview -- target/preview --lang en
 ## 许可证
 
 [GPL-3.0-or-later](LICENSE)
+
+Skyward 由 kirklin 和它的贡献者编写：<https://github.com/kirklin/skyward>。这个 fork
+以及其中的 OPPO A9x（PCEM00）适配由 Xinran（Winkmoon）维护：<https://github.com/Winkmoon/skyward>。

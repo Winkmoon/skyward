@@ -89,70 +89,55 @@ read and set properties.
 
 ![Skyward starts even without a system](slides/en/out/15-no-system.png)
 
-## Supported devices
+## This port
 
-| Device | Codename | Tested system version |
+| Device | Model code | Branch |
 | --- | --- | --- |
-| Xiaomi 17 Ultra | `nezha` | OS4.0.4.0.XPACNXM (Android 17) |
-| Xiaomi 13 Ultra | `ishtar` | OS3.0.308.0.WMACNXM (Android 16) |
+| OPPO A9x (and the A9 it shares its parts with) | PCEM00 | `OPa9-a9x` |
 
-### 🚧 Under construction
+The phone is a MediaTek MT6771 (Helio P70) machine with the Android 9 era
+partition layout: A-only, one recovery partition, no super. This port runs the
+phone's own kernel, draws the pages on its framebuffer, brings its Wi-Fi up
+through the vendor's supplicant, and opens the data partition through the key
+engine the phone's own TWRP port shipped. What the port changes and why is
+written down in [PORTING.md](PORTING.md).
 
-These images are built from each phone's stock firmware and have not been tried
-on the phone. They set up the screen, touch, Wi-Fi and vibration. The programs that
-decrypting the data partition takes are read on the phone from the installed
-system's own init scripts and service descriptions; what is read has been checked
-against each model's stock firmware, and how those programs run on these models has
-not been verified.
-
-| Device | Codename | Built on |
-| --- | --- | --- |
-| 🚧 Xiaomi 13 | `fuxi` | OS3.0.309.0.WMCCNXM (Android 16) |
-| 🚧 Xiaomi 13 Pro | `nuwa` | OS3.0.312.0.WMBCNXM (Android 16) |
-| 🚧 Xiaomi 14 | `houji` | OS3.0.307.0.WNCCNXM (Android 16) |
-| 🚧 Xiaomi 14 Pro | `shennong` | OS3.0.309.0.WNBCNXM (Android 16) |
-| 🚧 Xiaomi 14 Ultra | `aurora` | OS3.0.308.0.WNACNXM (Android 16) |
-| 🚧 Xiaomi 15 | `dada` | OS3.0.307.0.WOCCNXM (Android 16) |
-| 🚧 Xiaomi 15 Pro | `haotian` | OS3.0.309.0.WOBCNXM (Android 16) |
-| 🚧 Xiaomi 15 Ultra | `xuanyuan` | OS3.0.314.0.WOACNXM (Android 16) |
-| 🚧 Xiaomi 17 | `pudding` | OS4.0.4.0.XPCCNXM (Android 17) |
-| 🚧 Xiaomi 17 Pro | `pandora` | OS4.0.4.0.XBLCNXM (Android 17) |
-| 🚧 Xiaomi 17 Pro Max | `popsicle` | OS4.0.4.0.XPBCNXM (Android 17) |
-| 🚧 Xiaomi 17 Max | `byron` | OS3.0.310.0.WAFCNXM (Android 16) |
-| 🚧 REDMI K80 | `zorn` | OS3.0.309.0.WOKCNXM (Android 16) |
-| 🚧 REDMI K80 Pro | `miro` | OS3.0.305.0.WOMCNXM (Android 16) |
-| 🚧 REDMI K90 | `annibale` | OS3.0.307.0.WPKCNXM (Android 16) |
-| 🚧 REDMI K90 Pro Max | `myron` | OS4.0.4.0.XPMCNXM (Android 17) |
-| 🚧 REDMI K90 Ultra | `warsaw` | OS3.0.309.0.WHPCNXM (Android 16) |
-| 🚧 REDMI K100 Pro | `athens` | OS4.0.4.0.XPICNXM (Android 17) |
-| 🚧 REDMI K100 Pro Max | `songyuan` | OS4.0.4.0.XGNCNXM (Android 17) |
+The port, and this fork, are by Xinran (Winkmoon); Skyward itself is by kirklin
+and its contributors.
 
 ## Installing Skyward
 
-Skyward needs an unlocked bootloader. Download the zip for your phone from
-[Releases](https://github.com/kirklin/skyward/releases), where each shows as the
-phone's model and codename, such as Xiaomi 17 Ultra (nezha). Check it against
-`SHA256SUMS`, unzip it, and flash the image inside to the recovery partition of
-the slot the phone runs from, with the phone in fastboot mode:
+The phone needs an unlocked bootloader. Download `skyward-pcem00.zip` from this
+fork's [Releases](https://github.com/Winkmoon/skyward/releases), check it against
+the SHA-256 printed there, unzip it, and flash the image inside to the recovery
+partition.
+
+With the phone in fastboot mode:
 
 ```sh
-unzip skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.zip
-fastboot flash recovery skyward-v0.3.1-nezha-OS4.0.4.0.XPACNXM.img
+unzip skyward-pcem00.zip
+fastboot flash recovery skyward-pcem00.img
 fastboot reboot recovery
 ```
 
-Afterwards Skyward updates itself over Wi-Fi from its newest release, on the
-Skyward update page in Settings; a newer image, unzipped, also installs from its own
-Install page. With **Flash Skyward again** on, a system update or zip that writes
-over the recovery partitions gets Skyward back in them.
+Or from a root shell in the running system, in a TWRP, or in Skyward itself:
 
-adb in Skyward is a root shell that needs no authorization on the phone: anyone
-with the phone and a cable can reach its storage while it is in recovery.
+```sh
+adb push skyward-pcem00.img /tmp/recovery.img
+adb shell dd if=/tmp/recovery.img of=/dev/block/by-name/recovery bs=1M
+adb reboot recovery
+```
+
+Skyward then starts in Chinese. The Decrypt page asks for the phone's screen-lock
+PIN before it opens the data partition; a phone with no screen lock cannot be
+opened by this key engine, and the page says so. Its adb is a root shell that
+needs no authorization on the phone. There is no super partition on this phone,
+so the dual-boot pages are not offered.
 
 ## How dual boot works
 
 Skyward installs a second system beside the one in the phone's own partitions,
-whether that is HyperOS or a custom ROM, and switches between them from **Dual boot**
+whether that is the installed system or a custom ROM, and switches between them from **Dual boot**
 on its home page. The second system's root is a file in the data partition that the
 filesystem may neither move nor delete, read and written through the partition
 itself; the boot images of both systems are kept in another such file. A switch
@@ -220,27 +205,28 @@ is built as a static program:
 RUSTFLAGS="-C target-feature=+crt-static" cargo ndk -t arm64-v8a --platform 30 build --release -p skyward-system-init --target-dir target/system-init
 ```
 
-The packer takes the stock recovery partition out of the build's full update
-package on Xiaomi's server, reading only the part of the package the partition is
-in, and checks its SHA-256 against the device file:
+This fork builds its recovery image in GitHub Actions on every push to the
+`OPa9-a9x` branch, and the same steps run on a computer. The stock recovery
+partition image is kept in `stock/pcem00/recovery.img`, and the kernel in
+`stock/pcem00/Image.gz`; `tools/pack_recovery.py` replaces the ramdisk inside
+the stock image and appends the AVB hash footer:
 
 ```sh
-target/release/skyward-pack stock --config devices/nezha.toml --out target/stock/nezha/recovery.img
-```
-
-Then it builds the image on top of it:
-
-```sh
-target/release/skyward-pack recovery \
-  --stock target/stock/nezha/recovery.img \
+python3 tools/pack_recovery.py \
+  --stock stock/pcem00/recovery.img \
+  --kernel stock/pcem00/Image.gz \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
-  --config devices/nezha.toml \
+  --config devices/pcem00.toml \
   --font resources/fonts/NotoSansSC-Regular.ttf \
+  --font-license resources/fonts/NotoSansSC-OFL.txt \
   --mono resources/fonts/KirkMono-Regular.ttf \
   --mono-license resources/fonts/KirkMono-OFL.txt \
-  --out target/skyward-nezha.img
+  --out out/skyward-pcem00.img
 ```
+
+What the packer has to keep in mind on this phone — the ramdisk room LK reserves,
+the boot header v2, the AVB footer — is written down in [PORTING.md](PORTING.md).
 
 Tests and lints run on the computer; what runs only on the phone is linted for it:
 
@@ -285,3 +271,7 @@ for two texts that run into each other.
 ## License
 
 [GPL-3.0-or-later](LICENSE)
+
+Skyward is by kirklin and its contributors: <https://github.com/kirklin/skyward>.
+This fork, and the OPPO A9x (PCEM00) port in it, are by Xinran (Winkmoon):
+<https://github.com/Winkmoon/skyward>.
