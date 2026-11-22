@@ -78,6 +78,12 @@ adb reboot recovery
   TWRP script is involved.
 * **no super** — `snapshot_state()` is `None` on a phone without a super
   partition, so the home page does not warn about an update it cannot read.
+* **language** — the pages keep their settings on the metadata partition,
+  which this phone's recovery cannot mount, so no language is ever chosen and
+  the pages would fall back to the installed system's `en-US`.
+  `[ui] language = "zh-Hans"` in `devices/pcem00.toml` starts them in Chinese
+  instead; the few messages the key engine itself gives are written in
+  simplified Chinese, traditional Chinese and English alike.
 
 ## What does not work yet
 
