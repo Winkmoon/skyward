@@ -84,6 +84,23 @@ pub struct DeviceConfig {
     /// The stock build the recovery is made on.
     #[serde(default)]
     pub stock: Option<Stock>,
+    /// The program that unlocks the data partition on a phone whose key
+    /// hardware the recovery's own key service does not speak to.
+    #[serde(default)]
+    pub decrypt: Decrypt,
+}
+
+/// The program that unlocks the data partition, for a phone whose key
+/// hardware the recovery's own key service does not speak to: a vendor that
+/// provides keymaster 3.0 over HIDL, where the recovery's own key service
+/// speaks the newer KeyMint interface only. The recovery runs it with the
+/// credential as its one argument; it installs the keys into the filesystem's
+/// own keyring, and changes nothing on the phone.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct Decrypt {
+    /// The program's path in the recovery ramdisk.
+    #[serde(default)]
+    pub engine: Option<String>,
 }
 
 /// The stock build a recovery is made on: the phone maker's full update
@@ -599,6 +616,9 @@ impl DeviceConfig {
                     None => ensure!(path.is_absolute(), "[wlan] firmware: {} is not an absolute path", file.path),
                 }
             }
+        }
+        if let Some(engine) = &cfg.decrypt.engine {
+            ensure!(Path::new(engine).is_absolute(), "[decrypt] engine: {engine} is not an absolute path");
         }
         Ok(cfg)
     }

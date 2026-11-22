@@ -69,3 +69,12 @@ libraries = ["/system/lib64/wifilib", "/vendor/lib64", "/vendor/lib64/hw", "/sys
 # for.
 service = "android.hardware.wifi.supplicant.ISupplicant/default"
 probe = "http://connectivitycheck.gstatic.com/generate_204"
+
+# The phone's vendor provides keymaster 3.0 over HIDL only, which the
+# recovery's own key service does not speak. The engine the phone's own
+# third-party recovery shipped unlocks the partition instead: its prep
+# script starts the secure world's daemon and the credential and key
+# services of the older kind, and the engine installs the keys into the
+# filesystem's keyring from the credential, changing nothing on the phone.
+[decrypt]
+engine = "/system/bin/twrp_fbedec2"

@@ -1,13 +1,24 @@
 //! Opening the data partition and its users' own files on a thread of its
 //! own, so the screen keeps up: the keys come from the secure world, and
 //! what a user enters at their screen lock is checked slowly on purpose.
+//!
+//! A phone whose key hardware the recovery's own key service does not speak
+//! to, such as one whose vendor provides keymaster 3.0 over HIDL, names in
+//! its configuration a key engine of the phone's own: a program that takes
+//! the credential as its one argument and installs the keys into the
+//! filesystem's own keyring. The recovery mounts the partition and runs the
+//! engine, and reads the users still closed from the partition the engine's
+//! keys have opened.
 
 use anyhow::Result;
 use skyward_binder::driver::Binder;
+use skyward_config::DeviceConfig;
 use skyward_crypto::data::{self, Closed, Opening};
 use skyward_crypto::keymint::KeyMint;
 use skyward_sys::worker::Worker;
 use std::os::fd::RawFd;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 pub enum Job {
     /// Open the partition as far as it opens with nothing a user knows.
@@ -23,6 +34,12 @@ pub enum Ended {
     Unlocked(Result<Vec<Closed>, String>),
 }
 
+/// The program the device's configuration names to unlock the data
+/// partition, where it names one.
+pub fn engine(cfg: &DeviceConfig) -> Option<PathBuf> {
+    cfg.decrypt.engine.as_deref().map(PathBuf::from)
+}
+
 /// A job done on a thread of its own, which the screen lets go once the
 /// job has ended.
 pub struct Decryptor {
@@ -31,13 +48,17 @@ pub struct Decryptor {
 }
 
 impl Decryptor {
-    pub fn start(job: Job) -> Result<Decryptor> {
+    pub fn start(job: Job, engine: Option<PathBuf>) -> Result<Decryptor> {
         let worker = Worker::start("decrypt", move |tell| {
             tell.tell(match job {
-                Job::Open => Ended::Opened(with_data_keys(data::open_without_credential)),
-                Job::Unlock { closed, user, credential } => {
-                    Ended::Unlocked(with_key_service(|service| data::unlock(service, &closed, user, &credential)))
-                }
+                Job::Open => Ended::Opened(match &engine {
+                    Some(engine) => engine_open(engine),
+                    None => with_data_keys(data::open_without_credential),
+                }),
+                Job::Unlock { closed, user, credential } => Ended::Unlocked(match &engine {
+                    Some(engine) => engine_unlock(engine, credential),
+                    None => with_key_service(|service| data::unlock(service, &closed, user, &credential)),
+                }),
             });
         })?;
         Ok(Decryptor { worker })
@@ -52,6 +73,91 @@ impl Decryptor {
     pub fn ended(&self) -> Option<Ended> {
         self.worker.events().pop()
     }
+}
+
+/// The script that starts what the phone's key engine needs: the secure
+/// world's daemon, the hardware service directory and the credential and key
+/// services of the older kind. It is the one the phone's own third-party
+/// recovery shipped, it leaves what it starts running, and it starts
+/// nothing that runs already.
+const PREPARE: &str = "/system/bin/twrp-fbedec-prep.sh";
+
+/// Where the engine's programs look for their libraries: the recovery's own,
+/// the vendor partition's, and each one's hardware modules. The vendor's
+/// credential module needs its own folder, and a half-given list leaves it
+/// loading the software stand-in, which answers every credential wrong.
+const LIBRARIES: &str = "/system/lib64:/vendor/lib64:/vendor/lib64/hw:/system/lib64/hw";
+
+/// The exit the engine gives for a credential that did not open the user's
+/// secret.
+const WRONG_CREDENTIAL: i32 = 2;
+
+/// What the engine is started with, and what it said.
+fn run(engine: &Path, credential: &str) -> Result<Output, String> {
+    // The script is idempotent: every part it starts it starts only where
+    // that part does not run.
+    let _ = Command::new("/system/bin/sh").arg(PREPARE).status();
+    Command::new(engine)
+        .arg(credential)
+        .env("LD_LIBRARY_PATH", LIBRARIES)
+        .env("PATH", "/system/bin:/vendor/bin")
+        .current_dir("/")
+        .output()
+        .map_err(|e| format!("start {}: {e}", engine.display()))
+}
+
+/// What the engine's last words were, for the page.
+fn said(output: &Output) -> String {
+    let mut lines: Vec<&str> = Vec::new();
+    for stream in [&output.stdout, &output.stderr] {
+        for line in String::from_utf8_lossy(stream).lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                lines.push(line);
+            }
+        }
+    }
+    let tail: Vec<&str> = lines.iter().rev().take(3).copied().collect();
+    tail.into_iter().rev().collect::<Vec<_>>().join(" | ")
+}
+
+/// Open the data partition as far as the engine opens it with no credential:
+/// its files that belong to no one user, and each user's files readable
+/// before they sign in. The engine goes on to the owner's own files and
+/// fails there, having installed what came before, so what it said matters
+/// only where those first keys did not come in.
+fn engine_open(engine: &Path) -> Result<Opening, String> {
+    let mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
+    let output = run(engine, "")?;
+    let de = Path::new("/data/misc/vold/user_keys/de");
+    if std::fs::read_dir(de).is_err() {
+        return Err(match output.status.code() {
+            Some(code) if code == WRONG_CREDENTIAL => {
+                format!("the key engine opened nothing: {}", said(&output))
+            }
+            _ => format!("the key engine ended with {}: {}", output.status, said(&output)),
+        });
+    }
+    let closed = data::closed_users().map_err(|e| format!("{e:#}"))?;
+    Ok(Opening { mounted, closed })
+}
+
+/// Open the user's own files with what they entered. The engine installs the
+/// key the user's credential leads to into the filesystem's keyring, and
+/// checks the credential by the key's own tag: a wrong one installs nothing.
+fn engine_unlock(engine: &Path, credential: Vec<u8>) -> Result<Vec<Closed>, String> {
+    let typed = String::from_utf8_lossy(&credential).into_owned();
+    let output = run(engine, &typed)?;
+    if !output.status.success() {
+        return Err(match output.status.code() {
+            Some(WRONG_CREDENTIAL) => "the credential is not the one the user's files were locked with".to_string(),
+            Some(code) => format!("the key engine ended with {code}: {}", said(&output)),
+            None => format!("the key engine ended with {}: {}", output.status, said(&output)),
+        });
+    }
+    let _ = skyward_sys::kmsg(&format!("the key engine opened the user's files: {}", said(&output)));
+    data::show_owner_storage().map_err(|e| format!("{e:#}"))?;
+    Ok(Vec::new())
 }
 
 /// Do `work` with the phone's key service, reached afresh for it, and say

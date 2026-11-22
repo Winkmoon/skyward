@@ -161,12 +161,46 @@ pub fn reach_unmounted(keys: Option<&KeyMint>) -> Result<Reached> {
 }
 
 /// Show the owner's shared storage at /sdcard; shown already, it stays.
-fn show_owner_storage() -> Result<()> {
+pub fn show_owner_storage() -> Result<()> {
     let at = Path::new(SDCARD);
     if mount::is_mount_point(at)? {
         return Ok(());
     }
     mount::bind(&Path::new(SHARED_STORAGE).join(OWNER.to_string()), at)
+}
+
+/// Mount the data partition as the plain filesystem it is, letting no user's
+/// key in: what a key engine of the phone's own unlocks afterwards. Nothing
+/// is mounted where the partition shows already. The filesystem is not
+/// checked first, as mounting it through the key service does: the engine
+/// reads and writes the partition through the mount, and a check of the
+/// whole of it would only hold the screen.
+pub fn open_without_keys() -> Result<Option<Opened>> {
+    if mount::is_mount_point(Path::new(MOUNT))? {
+        return Ok(None);
+    }
+    let entries = table()?;
+    let device = skyward_block::fstab::device(&entries[0])?;
+    let holds = skyward_block::probe::filesystem(Path::new(&device))?;
+    let entry = entries.iter().find(|e| holds.as_ref() == Some(&e.filesystem)).unwrap_or(&entries[0]);
+    std::fs::create_dir_all(MOUNT).with_context(|| format!("make {MOUNT}"))?;
+    mount::mount(Path::new(&device), Path::new(MOUNT), &entry.filesystem, &entry.options)?;
+    Ok(Some(Opened { mapped: PathBuf::from(device), filesystem: entry.filesystem.clone(), checked: None }))
+}
+
+/// The users whose own files are still closed, read from the partition once
+/// the keys for the files readable before anyone signs in are in. Each keeps
+/// the kind of screen lock that guards it, and whether the phone made its
+/// credential up behind the owner's.
+pub fn closed_users() -> Result<Vec<Closed>> {
+    let mut closed = Vec::new();
+    for user in users()? {
+        let protector = protector(user)?;
+        if let Some(lock) = protector.lock {
+            closed.push(Closed { user, lock: lock.kind, made_up: made_up(user, &protector.id), why: None });
+        }
+    }
+    Ok(closed)
 }
 
 /// Close what opening the partition opened, where the recovery opened it:

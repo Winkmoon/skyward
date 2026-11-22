@@ -1486,7 +1486,7 @@ impl<'a> Pages<'a> {
                     match needs {
                         Needs::Data | Needs::User(_) => {
                             self.app.asked_opening();
-                            self.decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                            self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg))?);
                             self.pending = Some(wanted);
                         }
                         Needs::Nothing | Needs::Cache => self.installer = Some(install_asked(self.programs, &self.app, wanted)?),
@@ -2573,12 +2573,12 @@ impl Pages<'_> {
             // under way, and takes nothing more until it is done.
             Effect::OpenData => {
                 ensure!(self.decryptor.is_none(), "the data partition is being opened already");
-                self.decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+                self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg))?);
             }
             Effect::Unlock { user, code } => {
                 ensure!(self.decryptor.is_none(), "the data partition is being opened already");
                 let job = decrypt::Job::Unlock { closed: self.closed.clone(), user, credential: code.into_bytes() };
-                self.decryptor = Some(Decryptor::start(job)?);
+                self.decryptor = Some(Decryptor::start(job, decrypt::engine(self.cfg))?);
             }
             Effect::ReadDir(folder) => list(&mut self.app, folder)?,
             Effect::ReadPlace(place, folder) => list_place(&mut self.app, place, folder)?,

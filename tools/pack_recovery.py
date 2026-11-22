@@ -67,9 +67,8 @@ DROP_NAMES = {
     "twres", "twrp_ramdisk-timestamp", "relink_binaries-timestamp",
     "relink_libraries-timestamp", "relink_vendor_hw_binaries-timestamp",
     "system/etc/twrp.flags", "system/etc/twrp-wifi",
-    "system/bin/twrp-wifi.sh", "system/bin/twrp-fbedec-prep.sh",
-    "system/bin/twrp-fbedec-ui.sh", "system/bin/twrp_fbedec",
-    "system/bin/twrp_fbedec2", "system/bin/busybox", "system/bin/bash",
+    "system/bin/twrp-wifi.sh", "system/bin/twrp-fbedec-ui.sh",
+    "system/bin/twrp_fbedec", "system/bin/busybox", "system/bin/bash",
     "system/bin/nano",
 }
 
