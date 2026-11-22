@@ -123,7 +123,6 @@ impl Backlight {
             .parse()
             .with_context(|| format!("parse {name}"))
     }
-    }
 
     /// Light the panel at `level` of its normal maximum, or turn it off
     /// with `None`. The file is written only when the raw level changes.
