@@ -1,0 +1,22 @@
+# Skyward for the OPPO A9x (PCEM00), a MediaTek MT6771 phone built on the
+# Android 9 era partition layout: A-only, one recovery partition, no super.
+# This configuration is read by the recovery service out of the ramdisk
+# (skyward/device.toml).
+[device]
+codename = "pcem00"
+brand = "OPPO"
+model = "OPPO A9x"
+ab = false
+soc = { hans = "联发科 Helio P70", hant = "聯發科 Helio P70", en = "MediaTek Helio P70" }
+
+[display]
+width = 1080
+height = 2340
+density = 480
+diagonal = 6.5
+corner_radius = 0
+
+# The phone keeps its kernel modules on the vendor partition; there is no
+# vendor_boot or vendor_dlkm on this build.
+[modules]
+sources = ["vendor"]
