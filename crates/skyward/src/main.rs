@@ -550,8 +550,12 @@ fn bring_up(cfg: &DeviceConfig, slot: Option<skyward_vab::Slot>, found: Result<k
     let services: Vec<Started> = cfg.services.iter().filter(|s| s.runs_on(&props)).cloned().map(Started::from).collect();
     // The drivers ask for their firmware by name, and the kernel looks only
     // in folders of its own unless told to pass on what it does not find
-    // there to ueventd, which looks in the recovery's firmware folders.
-    std::fs::write(FIRMWARE_FALLBACK, "1").with_context(|| format!("write 1 to {FIRMWARE_FALLBACK}"))?;
+    // there to ueventd, which looks in the recovery's firmware folders. A
+    // kernel without that switch, as MediaTek's 4.14 is, has the drivers
+    // read their firmware from the folders the phone mounts themselves.
+    if let Err(e) = std::fs::write(FIRMWARE_FALLBACK, "1") {
+        skyward_sys::kmsg(&format!("the firmware loader's fallback switch is not here: {e}"))?;
+    }
     if let Some(firmware) = &cfg.firmware {
         mount_firmware(&firmware.partition)?;
     }
@@ -601,8 +605,14 @@ fn bring_up(cfg: &DeviceConfig, slot: Option<skyward_vab::Slot>, found: Result<k
     let mut told = registering.clone();
     told.extend(described.into_iter().filter(|name| !registering.contains(name)));
     if !told.is_empty() {
-        secure::publish_descriptions(&told)?;
-        skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?;
+        // A recovery without the framework's own service directory knows
+        // none of what the phone describes; the directory for hardware
+        // services reads the phone's manifests itself. The programs are
+        // started either way.
+        match secure::publish_descriptions(&told) {
+            Ok(()) => skyward_sys::kmsg(&format!("the service directory is told of {} of the phone's own services", told.len()))?,
+            Err(e) => skyward_sys::kmsg(&format!("the service directory was not told of the phone's own services: {e:#}"))?,
+        }
     }
     let libraries = secure::libraries()?;
     if let Some(dir) = &libraries {

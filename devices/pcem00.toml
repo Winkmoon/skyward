@@ -26,3 +26,42 @@ sources = ["vendor"]
 # there), and the WLAN driver's calibration is on nvdata.
 [partitions]
 mounted = ["persist", "nvdata"]
+
+# The directory for hardware services of the older kind, which the MTK WLAN
+# service and supplicant register with; it reads the phone's own VINTF
+# manifests from the mounted vendor and odm partitions.
+[[service]]
+path = "/system/bin/hwservicemanager"
+ready_property = "hwservicemanager.ready"
+
+# MediaTek's connectivity chip: wmt_loader loads the WMT firmware, then
+# wmt_launcher and wlan_assistant bring up the WLAN driver and its
+# calibration from /vendor/firmware and nvdata. Writing 1 to /dev/wmtWifi
+# (the WLAN page's first write) powers the chip on and makes wlan0.
+[[service]]
+path = "/vendor/bin/wmt_loader"
+
+[[service]]
+path = "/vendor/bin/wmt_launcher"
+args = ["-p", "/vendor/firmware/"]
+libraries = ["/vendor/lib64", "/system/lib64"]
+
+[[service]]
+path = "/vendor/bin/wlan_assistant"
+libraries = ["/vendor/lib64", "/system/lib64"]
+
+[wlan]
+# The helpers above load the driver, so the WLAN page only has to power the
+# chip on and let the phone's own supplicant join networks.
+modules = []
+writes = [{ path = "/dev/wmtWifi", value = "1" }]
+interface = "wlan0"
+supplicant = "/vendor/bin/hw/wpa_supplicant"
+libraries = ["/system/lib64/wifilib", "/vendor/lib64", "/vendor/lib64/hw", "/system/lib64", "/system/lib64/hw"]
+# The name the recovery's service directory is told of before the WLAN is
+# turned on. The phone's supplicant is a hardware service of the older
+# kind, which the directory reads from the vendor partition's own manifest,
+# so this is the kind of name the newer directory takes and is not waited
+# for.
+service = "android.hardware.wifi.supplicant.ISupplicant/default"
+probe = "http://connectivitycheck.gstatic.com/generate_204"

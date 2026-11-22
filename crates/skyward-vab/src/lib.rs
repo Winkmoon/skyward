@@ -264,6 +264,11 @@ impl Update {
 }
 
 pub fn snapshot_state() -> Result<SnapshotState> {
+    // A phone that keeps no super partition keeps no snapshots of one
+    // either, whatever its metadata partition holds.
+    if !Path::new(skyward_block::BY_NAME).join("super").exists() {
+        return Ok(SnapshotState::None);
+    }
     if !skyward_block::mount::is_mount_point(Path::new(METADATA))? {
         return Ok(SnapshotState::Unknown);
     }
