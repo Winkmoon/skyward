@@ -2993,8 +2993,7 @@ impl Pages<'_> {
     /// boot.
     fn enter_recovery(&mut self) -> Result<()> {
         skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)?;
-        let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-        crate::prepare(self.cfg, slot)?;
+        crate::prepare(self.cfg, skyward_vab::current_slot()?)?;
         self.read_at = Instant::now();
         read_details(self.cfg, &mut self.info, &mut self.unread.details)?;
         self.fastboot = false;
