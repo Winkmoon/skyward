@@ -51,6 +51,13 @@ pub const TIME_ZONES: [(Text, Text, &str); 9] = [
 ];
 
 impl App {
+    /// Light the panel at `level` of the brightness slider's span; the
+    /// slider's floor holds, as when the slider itself is dragged.
+    pub fn set_brightness(&mut self, level: f32) {
+        self.state.brightness = level.clamp(MIN_BRIGHTNESS, 1.0);
+        self.dirty = true;
+    }
+
     pub(super) fn set_slider(&mut self, t: &Theme, which: Slider, track: Rect, x: f32) {
         self.set_level(t, which, track, (x - track.x) / track.w);
     }

@@ -1327,6 +1327,12 @@ impl<'a> Pages<'a> {
         };
         let mut app = App::new(first, w, h, cfg.display.density as f32 / 160.0);
         app.set_screen_corners(cfg.display.corner_radius as f32);
+        // A phone whose recovery keeps no settings between starts starts the
+        // panel at the brightness its configuration names, where it names
+        // one; settings kept from the starts before come over that.
+        if let Some(brightness) = cfg.ui.brightness {
+            app.set_brightness(brightness);
+        }
         // The settings kept from the starts before are back before the first
         // frame, and before file transfer starts with its switch and the time
         // zone. The pages speak the language chosen then, or else the one the

@@ -81,6 +81,9 @@ engine = "/system/bin/twrp_fbedec2"
 
 # The recovery keeps no settings between starts on this phone (its metadata
 # partition is blank), so the pages start in the language named here rather
-# than the one the installed system names.
+# than the one the installed system names, and the panel starts at the
+# brightness named here rather than the tenth of the slider the pages start
+# with: this panel's own LED range makes that tenth read as a dark screen.
 [ui]
 language = "zh-Hans"
+brightness = 0.6

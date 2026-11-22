@@ -97,13 +97,19 @@ pub struct DeviceConfig {
 /// The pages' own settings, for a phone whose recovery keeps none of its own
 /// between starts: there the pages start in the language the phone's
 /// configuration names, where it names one, rather than the one its system
-/// names.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+/// names, and the panel at the brightness it names rather than a tenth of
+/// the slider.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 pub struct Ui {
     /// The language the pages start speaking: a locale, as `zh-Hans` or
     /// `zh_CN`.
     #[serde(default)]
     pub language: Option<String>,
+    /// How bright the panel starts, as a share of the slider's span from
+    /// its left end to its right: the share the pages set where the phone
+    /// keeps no settings between starts, whose own default is a tenth.
+    #[serde(default)]
+    pub brightness: Option<f32>,
 }
 
 /// The program that unlocks the data partition, for a phone whose key
@@ -635,6 +641,12 @@ impl DeviceConfig {
         }
         if let Some(engine) = &cfg.decrypt.engine {
             ensure!(Path::new(engine).is_absolute(), "[decrypt] engine: {engine} is not an absolute path");
+        }
+        if let Some(brightness) = cfg.ui.brightness {
+            ensure!(
+                (0.0..=1.0).contains(&brightness),
+                "[ui] brightness: {brightness} is not a share of the slider from 0 to 1"
+            );
         }
         Ok(cfg)
     }
