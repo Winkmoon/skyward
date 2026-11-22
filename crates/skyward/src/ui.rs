@@ -1302,7 +1302,16 @@ impl<'a> Pages<'a> {
         let kept = settings::read()?;
         let locale = request.locale.as_deref().or(info.locale.as_deref());
         let named = locale.map(Lang::for_locale).transpose()?;
-        app.take_settings(kept.settings(), named);
+        // The language the pages start in where no language was chosen: the
+        // one the phone's configuration names, or else the one its system
+        // names, or else the one they last spoke. A phone whose recovery
+        // keeps no settings between starts has none chosen ever, so what its
+        // configuration names is what its pages speak.
+        let starting = match cfg.ui.language.as_deref() {
+            Some(tag) => Some(Lang::for_locale(tag).with_context(|| format!("read the language {tag:?} that [ui] names"))?),
+            None => named,
+        };
+        app.take_settings(kept.settings(), starting);
         let keeper = Keeper::new(&kept);
         skyward_sys::kmsg(&format!(
             "the pages speak {:?}, {}, and the locale named is {}",
@@ -1486,7 +1495,7 @@ impl<'a> Pages<'a> {
                     match needs {
                         Needs::Data | Needs::User(_) => {
                             self.app.asked_opening();
-                            self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg))?);
+                            self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg), self.app.state.lang)?);
                             self.pending = Some(wanted);
                         }
                         Needs::Nothing | Needs::Cache => self.installer = Some(install_asked(self.programs, &self.app, wanted)?),
@@ -2573,12 +2582,12 @@ impl Pages<'_> {
             // under way, and takes nothing more until it is done.
             Effect::OpenData => {
                 ensure!(self.decryptor.is_none(), "the data partition is being opened already");
-                self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg))?);
+                self.decryptor = Some(Decryptor::start(decrypt::Job::Open, decrypt::engine(self.cfg), self.app.state.lang)?);
             }
             Effect::Unlock { user, code } => {
                 ensure!(self.decryptor.is_none(), "the data partition is being opened already");
                 let job = decrypt::Job::Unlock { closed: self.closed.clone(), user, credential: code.into_bytes() };
-                self.decryptor = Some(Decryptor::start(job, decrypt::engine(self.cfg))?);
+                self.decryptor = Some(Decryptor::start(job, decrypt::engine(self.cfg), self.app.state.lang)?);
             }
             Effect::ReadDir(folder) => list(&mut self.app, folder)?,
             Effect::ReadPlace(place, folder) => list_place(&mut self.app, place, folder)?,

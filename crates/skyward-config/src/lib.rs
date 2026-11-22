@@ -88,6 +88,22 @@ pub struct DeviceConfig {
     /// hardware the recovery's own key service does not speak to.
     #[serde(default)]
     pub decrypt: Decrypt,
+    /// The pages' own settings, for a phone whose recovery keeps none of its
+    /// own between starts.
+    #[serde(default)]
+    pub ui: Ui,
+}
+
+/// The pages' own settings, for a phone whose recovery keeps none of its own
+/// between starts: there the pages start in the language the phone's
+/// configuration names, where it names one, rather than the one its system
+/// names.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct Ui {
+    /// The language the pages start speaking: a locale, as `zh-Hans` or
+    /// `zh_CN`.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 /// The program that unlocks the data partition, for a phone whose key

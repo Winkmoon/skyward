@@ -16,6 +16,7 @@ use skyward_config::DeviceConfig;
 use skyward_crypto::data::{self, Closed, Opening};
 use skyward_crypto::keymint::KeyMint;
 use skyward_sys::worker::Worker;
+use skyward_ui::Lang;
 use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -49,15 +50,15 @@ pub struct Decryptor {
 }
 
 impl Decryptor {
-    pub fn start(job: Job, engine: Option<PathBuf>) -> Result<Decryptor> {
+    pub fn start(job: Job, engine: Option<PathBuf>, lang: Lang) -> Result<Decryptor> {
         let worker = Worker::start("decrypt", move |tell| {
             tell.tell(match job {
                 Job::Open => Ended::Opened(match &engine {
-                    Some(engine) => engine_open(engine),
+                    Some(engine) => engine_open(engine, lang),
                     None => with_data_keys(data::open_without_credential),
                 }),
                 Job::Unlock { closed, user, credential } => Ended::Unlocked(match &engine {
-                    Some(engine) => engine_unlock(engine, credential),
+                    Some(engine) => engine_unlock(engine, credential, lang),
                     None => with_key_service(|service| data::unlock(service, &closed, user, &credential)),
                 }),
             });
@@ -184,7 +185,7 @@ fn said(output: &Output) -> String {
 /// before they sign in. The engine goes on to the owner's own files and
 /// fails there, having installed what came before, so what it said matters
 /// only where those first keys did not come in.
-fn engine_open(engine: &Path) -> Result<Opening, String> {
+fn engine_open(engine: &Path, lang: Lang) -> Result<Opening, String> {
     let mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
     let kept = keep_data()?;
     run_opening(engine)?;
@@ -193,19 +194,14 @@ fn engine_open(engine: &Path) -> Result<Opening, String> {
     let closed = if readable { data::closed_users().map_err(|e| format!("{e:#}"))? } else { Vec::new() };
     let_data_go(kept);
     if !readable {
-        return Err("the phone's key engine opened nothing: its secure world did not answer".to_string());
+        return Err(text(lang, Text::EngineSilent));
     }
     // A phone whose data opens with no credential has no user the recovery
     // could unlock: the engine's first keys came in, and there is nothing
     // left that a credential would open. Say so, rather than showing a page
     // that asks for one and then opens nothing.
     if closed.is_empty() {
-        return Err(
-            "this phone has no screen lock, and this recovery cannot open a data partition \
-             without one. Set a PIN or password in Android, then come back: the recovery will \
-             ask for it."
-                .to_string(),
-        );
+        return Err(text(lang, Text::NoScreenLock));
     }
     Ok(Opening { mounted, closed })
 }
@@ -213,7 +209,7 @@ fn engine_open(engine: &Path) -> Result<Opening, String> {
 /// Open the user's own files with what they entered. The engine installs the
 /// key the user's credential leads to into the filesystem's keyring, and
 /// checks the credential by the key's own tag: a wrong one installs nothing.
-fn engine_unlock(engine: &Path, credential: Vec<u8>) -> Result<Vec<Closed>, String> {
+fn engine_unlock(engine: &Path, credential: Vec<u8>, lang: Lang) -> Result<Vec<Closed>, String> {
     let _mounted = data::open_without_keys().map_err(|e| format!("{e:#}"))?;
     let typed = String::from_utf8_lossy(&credential).into_owned();
     let kept = keep_data()?;
@@ -221,7 +217,7 @@ fn engine_unlock(engine: &Path, credential: Vec<u8>) -> Result<Vec<Closed>, Stri
     let_data_go(kept);
     if !output.status.success() {
         return Err(match output.status.code() {
-            Some(WRONG_CREDENTIAL) => "the credential is not the one the user's files were locked with".to_string(),
+            Some(WRONG_CREDENTIAL) => text(lang, Text::WrongCredential),
             Some(code) => format!("the key engine ended with {code}: {}", said(&output)),
             None => format!("the key engine ended with {}: {}", output.status, said(&output)),
         });
@@ -229,6 +225,42 @@ fn engine_unlock(engine: &Path, credential: Vec<u8>) -> Result<Vec<Closed>, Stri
     let _ = skyward_sys::kmsg(&format!("the key engine opened the user's files: {}", said(&output)));
     data::show_owner_storage().map_err(|e| format!("{e:#}"))?;
     Ok(Vec::new())
+}
+
+/// What the engine's own failures say on the page. The pages' texts live in
+/// their own tables, in every language; these few are written where they are
+/// said.
+enum Text {
+    /// The phone's secure world did not answer at all.
+    EngineSilent,
+    /// The phone has no screen lock, and the engine cannot open the
+    /// partition without one.
+    NoScreenLock,
+    /// What was entered is not the user's credential.
+    WrongCredential,
+}
+
+/// `what` in `lang`.
+fn text(lang: Lang, what: Text) -> String {
+    let (hans, hant, en) = match what {
+        Text::EngineSilent => (
+            "手机的密钥服务没有响应，数据分区没有打开。",
+            "手機的金鑰服務沒有回應，資料分割區沒有開啟。",
+            "the phone's key engine opened nothing: its secure world did not answer",
+        ),
+        Text::NoScreenLock => (
+            "此设备未设置锁屏密码，本 Recovery 不支持无密码解密。请先在 Android 中设置 PIN 或密码，再回到这里解密。",
+            "此裝置未設定螢幕鎖定密碼，本 Recovery 不支援無密碼解密。請先在 Android 中設定 PIN 或密碼，再回到這裡解密。",
+            "this phone has no screen lock, and this recovery cannot open a data partition without one. \
+             Set a PIN or password in Android, then come back: the recovery will ask for it.",
+        ),
+        Text::WrongCredential => (
+            "输入的锁屏密码不正确，用户数据没有打开。",
+            "輸入的螢幕鎖定密碼不正確，使用者資料沒有開啟。",
+            "the credential is not the one the user's files were locked with",
+        ),
+    };
+    lang.among(hans, hant, en).to_string()
 }
 
 /// Do `work` with the phone's key service, reached afresh for it, and say
