@@ -340,13 +340,15 @@ impl State {
     }
 
     /// Whether the phone has the page `screen`: the WLAN page where the
-    /// recovery brings the phone's WLAN up, and updating Skyward where the
-    /// phone also keeps its recovery in a partition of each slot.
+    /// recovery brings the phone's WLAN up, updating Skyward where the
+    /// phone also keeps its recovery in a partition of each slot, and the
+    /// update page where it has two slots for an update to move between.
     pub fn offers(&self, screen: Screen) -> bool {
         match screen {
             Screen::Wlan => self.wlan.is_some(),
             Screen::SkywardUpdate => self.wlan.is_some() && self.recovery_partitions,
             Screen::Systems => self.dual_boot,
+            Screen::Update => self.boot_slots.is_some(),
             _ => true,
         }
     }

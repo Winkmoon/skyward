@@ -939,36 +939,69 @@ fn read_folder(path: &Path) -> Result<Vec<FileRow>> {
     Ok(rows)
 }
 
-/// The slot's logical partitions and how each shows now, for the mount page.
-/// A mounted partition is in use when a program holds it, or when one of
-/// `services` this phone's build of the hardware runs is run from it: those
-/// are started again from there whenever they end.
+/// The slot's logical partitions and how each shows now, for the mount page;
+/// on a phone with one slot, the partitions its installed system keeps, each
+/// where the phone mounts it. A mounted partition is in use when a program
+/// holds it, or when one of `services` this phone's build of the hardware
+/// runs is run from it: those are started again from there whenever they end.
 fn read_mounts(services: &[Service]) -> Result<Vec<skyward_ui::app::MountRow>> {
     use skyward_ui::app::MountRow;
-    let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-    let shown = skyward_vab::mounted_partitions(slot)?;
     let holders = skyward_block::mount::holders()?;
-    let props = skyward_info::installed_props(slot)?;
-    let services: Vec<&Service> = services.iter().filter(|s| s.runs_on(&props)).collect();
     let mut rows = Vec::new();
-    for base in skyward_vab::slot_bases(slot)? {
-        let point = skyward_vab::mount_point(&base);
-        let name = format!("{base}{}", slot.suffix());
-        let mounted = shown.iter().find(|m| m.partition == name);
-        let mut using = BTreeSet::new();
-        if let Some(m) = mounted {
-            using.extend(holders.get(&skyward_block::devnum(&m.device)?).into_iter().flatten().cloned());
-            for s in services.iter().filter(|s| !s.oneshot && s.uses(&point)) {
-                let program = Path::new(&s.path).file_name().with_context(|| format!("{} names no program", s.path))?;
-                using.insert(program.to_string_lossy().into_owned());
+    let one_slot = match skyward_vab::current_slot()? {
+        Some(slot) => {
+            let shown = skyward_vab::mounted_partitions(slot)?;
+            let props = skyward_info::installed_props(slot)?;
+            let services: Vec<&Service> = services.iter().filter(|s| s.runs_on(&props)).collect();
+            for base in skyward_vab::slot_bases(slot)? {
+                let point = skyward_vab::mount_point(&base);
+                let name = format!("{base}{}", slot.suffix());
+                let mounted = shown.iter().find(|m| m.partition == name);
+                let mut using = BTreeSet::new();
+                if let Some(m) = mounted {
+                    using.extend(holders.get(&skyward_block::devnum(&m.device)?).into_iter().flatten().cloned());
+                    for s in services.iter().filter(|s| !s.oneshot && s.uses(&point)) {
+                        let program = Path::new(&s.path).file_name().with_context(|| format!("{} names no program", s.path))?;
+                        using.insert(program.to_string_lossy().into_owned());
+                    }
+                }
+                rows.push(MountRow {
+                    base,
+                    point: point.display().to_string(),
+                    mounted: mounted.is_some(),
+                    holders: using.into_iter().collect(),
+                });
             }
+            false
         }
-        rows.push(MountRow {
-            base,
-            point: point.display().to_string(),
-            mounted: mounted.is_some(),
-            holders: using.into_iter().collect(),
-        });
+        None => true,
+    };
+    if one_slot {
+        let shown = skyward_vab::mounted_partitions_legacy()?;
+        let props = skyward_info::installed_props_legacy()?;
+        let services: Vec<&Service> = services.iter().filter(|s| s.runs_on(&props)).collect();
+        for base in skyward_vab::LEGACY {
+            let device = Path::new(skyward_block::BY_NAME).join(base);
+            if !device.exists() {
+                continue;
+            }
+            let point = skyward_vab::legacy_point(base);
+            let mounted = shown.iter().any(|m| m.partition == base);
+            let mut using = BTreeSet::new();
+            if mounted {
+                using.extend(holders.get(&skyward_block::devnum(&device)?).into_iter().flatten().cloned());
+                for s in services.iter().filter(|s| !s.oneshot && s.uses(&point)) {
+                    let program = Path::new(&s.path).file_name().with_context(|| format!("{} names no program", s.path))?;
+                    using.insert(program.to_string_lossy().into_owned());
+                }
+            }
+            rows.push(MountRow {
+                base: base.to_string(),
+                point: point.display().to_string(),
+                mounted,
+                holders: using.into_iter().collect(),
+            });
+        }
     }
     Ok(rows)
 }
@@ -2612,7 +2645,10 @@ impl Pages<'_> {
             }
             Effect::StopBackup => self.backuper.as_ref().context("there is no backup or restore to stop")?.stop(),
             Effect::ReadUpdate => {
-                let slot = self.info.slot.context("only an A/B phone has an update to merge")?;
+                // An update to merge belongs to a phone with two slots; a
+                // phone with one has none, and its Advanced page does not
+                // offer the page that reads it.
+                let Some(slot) = self.info.slot else { return Ok(Vec::new()) };
                 // A merge followed tells where it stands itself.
                 if self.merger.is_none() {
                     self.app.set_update(skyward_vab::standing(slot)?);
@@ -2623,7 +2659,7 @@ impl Pages<'_> {
             }
             Effect::Merge => {
                 ensure!(self.merger.is_none(), "the update is being merged already");
-                let slot = self.info.slot.context("only an A/B phone merges an update")?;
+                let Some(slot) = self.info.slot else { return Ok(Vec::new()) };
                 skyward_sys::kmsg("merging the update, as the update page asked")?;
                 self.merger = Some(merge::Merger::start(slot, true)?);
             }
@@ -2699,15 +2735,21 @@ impl Pages<'_> {
             // A partition that will not mount, or is in use, is the
             // page's to report; the recovery carries on.
             Effect::Mount(base) => {
-                let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-                if let Err(e) = skyward_vab::mount_one(slot, &base) {
+                let mounted = match skyward_vab::current_slot()? {
+                    Some(slot) => skyward_vab::mount_one(slot, &base).map(|_| ()),
+                    None => skyward_vab::mount_legacy_one(&base),
+                };
+                if let Err(e) = mounted {
                     self.app.mount_failed(MountFailure { mounting: true, base, detail: format!("{e:#}") });
                 }
                 self.app.set_mounts(self.mounts());
             }
             Effect::Unmount(base) => {
-                let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-                if let Err(e) = skyward_vab::unmount_one(slot, &base) {
+                let unmounted = match skyward_vab::current_slot()? {
+                    Some(slot) => skyward_vab::unmount_one(slot, &base),
+                    None => skyward_vab::unmount_legacy_one(&base),
+                };
+                if let Err(e) = unmounted {
                     self.app.mount_failed(MountFailure { mounting: false, base, detail: format!("{e:#}") });
                 }
                 self.app.set_mounts(self.mounts());
@@ -2863,8 +2905,11 @@ impl Pages<'_> {
     /// the page's to report, with what to do first.
     fn relabel(&mut self, now: u64) -> Result<()> {
         ensure!(self.relabeler.is_none(), "relabeling is under way already");
-        let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
-        match relabel::rule_files(slot) {
+        let rules = match skyward_vab::current_slot()? {
+            Some(slot) => relabel::rule_files(slot),
+            None => relabel::rule_files_legacy(),
+        };
+        match rules {
             Ok(rules) => {
                 self.relabeler = Some(filework::Worker::start(filework::Task::Relabel { rules })?);
                 self.app.relabel_started();

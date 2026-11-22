@@ -44,12 +44,34 @@ pub const LEGACY: [&str; 5] = ["system", "system_ext", "vendor", "odm", "product
 /// keeps /system for its own ramdisk, so the system partition goes to
 /// /mnt/system, and the rest go where the ramdisk's links from the top of
 /// its tree lead, which is where the phone keeps them.
-fn legacy_point(base: &str) -> PathBuf {
+pub fn legacy_point(base: &str) -> PathBuf {
     if base == "system" {
         return PathBuf::from("/mnt/system");
     }
     let top = Path::new("/").join(base);
     fs::canonicalize(&top).unwrap_or(top)
+}
+
+/// Mount one partition of a phone with one slot, read-only, where the phone
+/// mounts it. A partition that shows already is not mounted again.
+pub fn mount_legacy_one(base: &str) -> Result<()> {
+    let device = Path::new(BY_NAME).join(base);
+    ensure!(device.exists(), "the phone has no partition {base}");
+    let point = legacy_point(base);
+    if mount::visible(&point)?.is_some() {
+        return Ok(());
+    }
+    fs::create_dir_all(&point).with_context(|| format!("create {}", point.display()))?;
+    mount::mount_ro_over(&device, &point).with_context(|| format!("mount {base}"))?;
+    Ok(())
+}
+
+/// Unmount one partition of a phone with one slot, from where the phone
+/// mounts it.
+pub fn unmount_legacy_one(base: &str) -> Result<()> {
+    let point = legacy_point(base);
+    mount::umount_over(&point).with_context(|| format!("unmount {}", point.display()))?;
+    Ok(())
 }
 
 /// The partitions of a phone with one slot that show, mounted.

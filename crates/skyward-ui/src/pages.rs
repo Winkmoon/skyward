@@ -1868,22 +1868,28 @@ pub fn advanced(cx: &Ctx) -> Frame {
     let (t, f, l) = (cx.t, cx.f, cx.state.lang);
     let mut c = page(cx);
     let top = t.m.content_top;
-    let tools = widgets::list(&mut c, t, f, top, &[
+    let mut rows = vec![
         Row::new(l.pick(texts::page::FILES)).icon(BLUE, Icon::Folder),
         Row::new(l.pick(texts::page::TERMINAL)).icon(SLATE, Icon::Terminal),
         Row::new(l.pick(texts::page::RELABEL)).icon(PURPLE, Icon::Shield),
         Row::new(l.pick(texts::page::FILESYSTEMS)).icon(RED, Icon::Mount),
         Row::new(l.pick(texts::page::LOGS)).icon(ORANGE, Icon::Log),
-        Row::new(l.pick(texts::page::UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
-    ]);
-    let out = hits(&tools.rows, &[
+    ];
+    let mut opens = vec![
         Action::Open(Screen::Files),
         Action::Open(Screen::Terminal),
         Action::Open(Screen::Relabel),
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
-        Action::Open(Screen::Update),
-    ]);
+    ];
+    // An update is merged on a phone with two slots; a phone with one has
+    // no page to move it between.
+    if cx.state.offers(Screen::Update) {
+        rows.push(Row::new(l.pick(texts::page::UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))));
+        opens.push(Action::Open(Screen::Update));
+    }
+    let tools = widgets::list(&mut c, t, f, top, &rows);
+    let out = hits(&tools.rows, &opens);
     Frame::new(t, c, out, l.pick(texts::page::ADVANCED), top)
 }
 

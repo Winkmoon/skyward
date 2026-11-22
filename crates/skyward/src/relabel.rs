@@ -63,6 +63,30 @@ pub fn rule_files(slot: Slot) -> Result<Vec<PathBuf>> {
     Ok(found)
 }
 
+/// The installed system's rules for labeling files on a phone with one slot,
+/// from each of its partitions that keeps some: every one it has must be
+/// mounted, and the system's own are always there.
+pub fn rule_files_legacy() -> Result<Vec<PathBuf>> {
+    let mounted = skyward_vab::mounted_partitions_legacy()?;
+    let mut found = Vec::new();
+    for (base, file) in RULES {
+        let device = Path::new(skyward_block::BY_NAME).join(base);
+        if !device.exists() {
+            continue;
+        }
+        if !mounted.iter().any(|m| m.partition == base) {
+            return Err(Unmounted(base.into()).into());
+        }
+        let path = skyward_vab::legacy_point(base).join(file);
+        if path.exists() {
+            found.push(path);
+        }
+    }
+    let system = skyward_vab::legacy_point("system").join(RULES[0].1);
+    ensure!(found.first() == Some(&system), "the system keeps no rules at {}", system.display());
+    Ok(found)
+}
+
 #[repr(C)]
 struct SelinuxOpt {
     kind: c_int,
