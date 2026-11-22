@@ -708,7 +708,7 @@ current = "{slot} (current)"
 system = "System"
 recovery = "Recovery"
 fastboot_note = "Userspace fastbootd"
-edl_note = "Qualcomm emergency download"
+edl_note = "MediaTek emergency download"
 power_off = "Power off"
 
 # The readings of the About and All specs pages.

@@ -621,7 +621,7 @@ current = "{slot} (saat ini)"
 system = "Sistem"
 recovery = "Recovery"
 fastboot_note = "fastbootd ruang pengguna"
-edl_note = "Download darurat Qualcomm"
+edl_note = "Unduhan darurat MediaTek"
 power_off = "Matikan daya"
 
 [specs]

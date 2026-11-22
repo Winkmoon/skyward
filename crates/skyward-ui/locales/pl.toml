@@ -636,7 +636,7 @@ current = "{slot} (bieżący)"
 system = "System"
 recovery = "Recovery"
 fastboot_note = "fastbootd w przestrzeni użytkownika"
-edl_note = "Tryb awaryjnego pobierania Qualcomm"
+edl_note = "Tryb awaryjnego pobierania MediaTek"
 power_off = "Wyłącz"
 
 [specs]

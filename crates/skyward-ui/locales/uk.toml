@@ -636,7 +636,7 @@ current = "{slot} (поточний)"
 system = "Система"
 recovery = "Режим відновлення"
 fastboot_note = "fastbootd у просторі користувача"
-edl_note = "Аварійне завантаження Qualcomm"
+edl_note = "Аварійне завантаження MediaTek"
 power_off = "Вимкнути"
 
 [specs]
