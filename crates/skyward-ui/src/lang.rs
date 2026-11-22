@@ -163,14 +163,14 @@ mod tests {
         read(&mut source, &manifest.join("src"));
         assert!(source.0.iter().any(|t| t.contains("Fastboot")), "the texts the source writes itself are read");
         let unwritten = |texts: &[String]| texts.iter().flat_map(|t| t.chars()).filter(|&ch| !ch.is_control() && !f.body.has(ch)).collect::<BTreeSet<char>>();
-        assert!(unwritten(&source.0).is_empty(), "MiSans draws none of {:?}, which the source writes", unwritten(&source.0));
+        assert!(unwritten(&source.0).is_empty(), "the typeface draws none of {:?}, which the source writes", unwritten(&source.0));
         for lang in Lang::ALL {
             let file = manifest.join("locales").join(format!("{}.toml", lang.tag()));
             let table: toml::Table = fs::read_to_string(&file).unwrap().parse().unwrap();
             let mut texts = Vec::new();
             written(&table, &mut texts);
             assert!(texts.len() > 1000, "the texts of {lang:?} are read");
-            assert!(unwritten(&texts).is_empty(), "MiSans draws none of {:?}, which {lang:?} writes", unwritten(&texts));
+            assert!(unwritten(&texts).is_empty(), "the typeface draws none of {:?}, which {lang:?} writes", unwritten(&texts));
         }
     }
 

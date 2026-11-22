@@ -1010,7 +1010,7 @@ about = "about version"
 skyward_update = "update upgrade release github"
 specs = "specs"
 license = "license gpl"
-fonts = "font misans kirkmono"
+fonts = "font notosanssc kirkmono"
 
 # The backup page: what to take, where it goes, and how.
 [backup]
@@ -1329,7 +1329,7 @@ typeface = "Typeface"
 version = "Version"
 copyright = "Copyright"
 interface_text = "Interface text"
-misans = "The interface text is set in Xiaomi's MiSans, used free of charge under the MiSans Font Intellectual Property License Agreement. The font files are unchanged, and come with Skyward alone, never on their own.\n\nThe agreement in full is on the MiSans website."
+misans = "The interface text is set in Noto Sans SC. Its license lets the font be used, changed and passed on freely, but not sold on its own.\n\nThe license in full is at /skyward/NotoSansSC-OFL.txt, and on openfontlicense.org."
 terminal_text = "Terminal text"
 ofl = "SIL Open Font License, version 1.1 (OFL-1.1)"
 mono = "The terminal text is set in the monospaced Kirk Mono. Its license lets the font be used, changed and passed on freely, but not sold on its own.\n\nThe license in full is at /skyward/KirkMono-OFL.txt, and on openfontlicense.org."

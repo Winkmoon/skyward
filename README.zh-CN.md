@@ -177,7 +177,7 @@ target/release/skyward-pack recovery \
   --binary target/aarch64-linux-android/release/skyward \
   --system-init target/system-init/aarch64-linux-android/release/system-init \
   --config devices/nezha.toml \
-  --font resources/fonts/MiSansVF.ttf \
+  --font resources/fonts/NotoSansSC-Regular.ttf \
   --mono resources/fonts/KirkMono-Regular.ttf \
   --mono-license resources/fonts/KirkMono-OFL.txt \
   --out target/skyward-nezha.img

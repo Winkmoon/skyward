@@ -51,9 +51,9 @@ adb reboot recovery
 
 * **ramdisk room** — LK reserves 0x2000000 bytes for the ramdisk at
   0x55000000 and resets the phone when a bigger one runs into its own memory
-  at 0x57000000. The ramdisk is kept under that: the small DroidSans fonts
-  instead of MiSansVF, TWRP's `twres`, `busybox`, `bash` and `nano` dropped,
-  and the binaries stripped.
+  at 0x57000000. The ramdisk is kept under that: one regular weight of Noto Sans
+  SC instead of the variable MiSans, TWRP's `twres`, `busybox`, `bash` and
+  `nano` dropped, and the binaries stripped.
 * **misc** — `bcb::misc()` falls back to `/dev/block/by-name/para`.
 * **no slots** — the service reads `skyward_vab::current_slot()` as
   `Option<Slot>`; a phone without slots mounts `system`, `vendor`, `odm`

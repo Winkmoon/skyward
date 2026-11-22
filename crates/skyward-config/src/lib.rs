@@ -9,7 +9,7 @@ pub mod ramdisk {
     /// The device configuration, copied from `devices/<codename>.toml`.
     pub const CONFIG: &str = "skyward/device.toml";
     /// The UI typeface.
-    pub const FONT: &str = "skyward/MiSansVF.ttf";
+    pub const FONT: &str = "skyward/NotoSansSC-Regular.ttf";
     /// The terminal's monospaced typeface.
     pub const MONO: &str = "skyward/KirkMono-Regular.ttf";
     /// The monospaced typeface's licence, which travels with every copy of

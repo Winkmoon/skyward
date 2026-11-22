@@ -613,7 +613,7 @@ pub fn specs(cx: &Ctx) -> Frame {
     y = widgets::info_card(&mut c, t, f, y + gap, &[(l.pick(texts::specs::INTERNAL_STORAGE), storage)]);
     let links = widgets::list(&mut c, t, f, y + gap, &[
         Row::new(l.pick(texts::page::LICENSE)).trail(Trail::Value("GPL-3.0")),
-        Row::new(l.pick(texts::page::FONTS)).trail(Trail::Value("MiSans")),
+        Row::new(l.pick(texts::page::FONTS)).trail(Trail::Value("Noto Sans SC")),
     ]);
     out.extend(hits(&links.rows, &[Action::Open(Screen::License), Action::Open(Screen::FontLicense)]));
     Frame::new(t, fit(c, t, links.bottom), out, l.pick(texts::page::SPECS), top)
@@ -3035,7 +3035,7 @@ pub fn font_license(cx: &Ctx) -> Frame {
     let y = widgets::info_card(&mut c, t, f, y, &[
         (typeface, f.info.family.clone()),
         (version, f.info.version.clone()),
-        (copyright, f.info.copyright.clone().expect("MiSans names its copyright holder")),
+        (copyright, f.info.copyright.clone().expect("the typeface names its copyright holder")),
     ]);
     let y = widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), l.pick(texts::fonts::MISANS));
     let y = widgets::section(&mut c, t, f, y, l.pick(texts::fonts::TERMINAL_TEXT));

@@ -24,7 +24,8 @@ Usage:
       --binary target/aarch64-linux-android/release/skyward \
       --system-init target/system-init/aarch64-linux-android/release/system-init \
       --config devices/pcem00.toml \
-      --font resources/fonts/MiSansVF.ttf \
+      --font resources/fonts/NotoSansSC-Regular.ttf \
+      --font-license resources/fonts/NotoSansSC-OFL.txt \
       --mono resources/fonts/KirkMono-Regular.ttf \
       --mono-license resources/fonts/KirkMono-OFL.txt \
       --out out/skyward-pcem00.img
@@ -49,7 +50,8 @@ S_IFLNK = 0o120000
 # skyward_config::ramdisk.
 RECOVERY = "system/bin/recovery"
 CONFIG = "skyward/device.toml"
-FONT = "skyward/MiSansVF.ttf"
+FONT = "skyward/NotoSansSC-Regular.ttf"
+FONT_LICENSE = "skyward/NotoSansSC-OFL.txt"
 MONO = "skyward/KirkMono-Regular.ttf"
 MONO_LICENSE = "skyward/KirkMono-OFL.txt"
 SYSTEM_INIT = "skyward/system-init"
@@ -334,6 +336,8 @@ def edit_ramdisk(ramdisk, args):
     add_file(entries, FONT, 0o644, args.font)
     add_file(entries, MONO, 0o644, args.mono)
     add_file(entries, MONO_LICENSE, 0o644, args.mono_license)
+    if args.font_license:
+        add_file(entries, FONT_LICENSE, 0o644, args.font_license)
     for command in COMMANDS:
         add_link(entries, command, "recovery")
     if find(entries, TASK_PROFILES) is None:
@@ -440,6 +444,7 @@ def main():
     p.add_argument("--system-init", required=True)
     p.add_argument("--config", required=True, help="devices/<codename>.toml")
     p.add_argument("--font", required=True)
+    p.add_argument("--font-license")
     p.add_argument("--mono", required=True)
     p.add_argument("--mono-license", required=True)
     p.add_argument("--mtp-rc", default="crates/skyward-pack/src/mtp.rc")
@@ -457,6 +462,7 @@ def main():
     a.system_init = read(a.system_init)
     a.config = read(a.config)
     a.font = read(a.font)
+    a.font_license = read(a.font_license) if a.font_license else None
     a.mono = read(a.mono)
     a.mono_license = read(a.mono_license)
     a.mtp_rc = read(a.mtp_rc)

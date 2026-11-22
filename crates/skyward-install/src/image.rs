@@ -305,7 +305,7 @@ pub(crate) mod samples {
     pub fn recovery(skyward: bool) -> Vec<u8> {
         let mut names = vec!["init", "system/bin/recovery", "prop.default"];
         if skyward {
-            names.extend(["skyward", "skyward/device.toml", "skyward/MiSansVF.ttf"]);
+            names.extend(["skyward", "skyward/device.toml", "skyward/NotoSansSC-Regular.ttf"]);
         }
         boot_image(0, &lz4_legacy(&archive(&names)))
     }

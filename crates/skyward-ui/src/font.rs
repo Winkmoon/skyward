@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-/// One weight instance of a typeface. MiSans ships as a variable font, so
-/// every UI weight is the same file with a different `wght` coordinate.
+/// One weight instance of a typeface. The interface typeface ships as one
+/// regular file, so a weight the pages ask for is drawn from that file.
 pub struct Face {
     pub(crate) font: FontRef<'static>,
     upem: f32,
@@ -300,7 +300,7 @@ impl Fonts {
 #[cfg(test)]
 pub(crate) fn bundled() -> Fonts {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/fonts");
-    Fonts::load(format!("{dir}/MiSansVF.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).unwrap()
+    Fonts::load(format!("{dir}/NotoSansSC-Regular.ttf"), 0, format!("{dir}/KirkMono-Regular.ttf")).unwrap()
 }
 
 #[cfg(test)]

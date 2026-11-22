@@ -6,7 +6,7 @@ name: Build PCEM00
 # phone maker's update packages are not AOSP payload packages.
 on:
   push:
-    branches: ["pcem00"]
+    branches: ["OPa9-a9x"]
   workflow_dispatch:
 
 permissions:
@@ -48,9 +48,10 @@ jobs:
             --binary target/aarch64-linux-android/release/skyward \
             --system-init target/system-init/aarch64-linux-android/release/system-init \
             --config devices/pcem00.toml \
-            --font stock/pcem00/fonts/DroidSansFallback.ttf \
-            --mono stock/pcem00/fonts/DroidSansMono.ttf \
+            --font resources/fonts/NotoSansSC-Regular.ttf \
+            --mono resources/fonts/KirkMono-Regular.ttf \
             --mono-license resources/fonts/KirkMono-OFL.txt \
+            --font-license resources/fonts/NotoSansSC-OFL.txt \
             --out out/skyward-pcem00.img
       - name: Zip the image
         working-directory: out

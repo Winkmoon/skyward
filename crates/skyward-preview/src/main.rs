@@ -1601,7 +1601,7 @@ fn font_path() -> Result<PathBuf> {
     if let Ok(p) = std::env::var("SKYWARD_FONT") {
         return Ok(PathBuf::from(p));
     }
-    let bundled = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/fonts/MiSansVF.ttf");
+    let bundled = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/fonts/NotoSansSC-Regular.ttf");
     if bundled.exists() {
         return Ok(bundled);
     }
