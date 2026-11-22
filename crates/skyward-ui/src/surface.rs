@@ -1,9 +1,10 @@
 use crate::canvas::Canvas;
 use anyhow::Result;
 
-/// A present target. The device backend scans out through KMS; the host
-/// preview backend encodes PNGs. Keeping the renderer behind this trait is
-/// what lets the whole UI be built and reviewed without the phone.
+/// A present target. The device backend scans out through KMS, or through a
+/// plain framebuffer on a phone whose display driver is not Qualcomm's; the
+/// host preview backend encodes PNGs. Keeping the renderer behind this trait
+/// is what lets the whole UI be built and reviewed without the phone.
 pub trait Surface {
     fn size(&self) -> (u32, u32);
     /// Hand `canvas` to the display. It returns once the frame before it is
@@ -12,6 +13,31 @@ pub trait Surface {
     fn present(&mut self, canvas: &Canvas) -> Result<()>;
     /// Wait until the frame presented last is on the panel.
     fn settle(&mut self) -> Result<()>;
+    /// What the display is, for the log.
+    fn describe(&self) -> &str {
+        "preview"
+    }
+    /// Whether the panel is on.
+    fn is_on(&self) -> bool {
+        true
+    }
+    /// Whether the panel is off.
+    fn is_off(&self) -> bool {
+        false
+    }
+    /// Put the panel to rest, ready to light again at once.
+    fn rest(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Turn the display off.
+    fn turn_off(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Switch a panel that came on again in its preferred mode to its
+    /// fastest.
+    fn speed_up(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// How Qualcomm's display driver drives a mode, from the text of the
@@ -913,6 +939,297 @@ pub mod kms {
                 self.flipping = false;
             }
             Ok(())
+        }
+
+        fn describe(&self) -> &str {
+            &self.summary
+        }
+
+        fn is_on(&self) -> bool {
+            self.power == Power::On
+        }
+
+        fn is_off(&self) -> bool {
+            self.power == Power::Off
+        }
+
+        /// Let the panel rest, ready to light again at once: in its
+        /// low-power mode, as Android rests it while dozing, with the
+        /// display processor stopped. The 13 Ultra's lights from there in
+        /// 13 ms, where coming on from off takes 158, most of it the panel
+        /// waiting 120 ms after leaving sleep as its own commands say.
+        /// Where the display driver has no low-power mode, the display
+        /// turns off. A touch controller that follows the panel, as
+        /// Xiaomi's do, rests with it either way.
+        fn rest(&mut self) -> Result<()> {
+            if self.power != Power::On {
+                return Ok(());
+            }
+            let Some((id, _, rest)) = self.lp else { return self.turn_off() };
+            self.settle()?;
+            let mut req = atomic::AtomicModeReq::new();
+            req.add_property(self.conn, id, property::Value::UnsignedRange(rest));
+            self.card.atomic_commit(AtomicCommitFlags::empty(), req).context("rest the panel")?;
+            self.power = Power::Resting;
+            Ok(())
+        }
+
+        /// Turn the display off: the panel and the display processor feeding
+        /// it stop drawing power. The next frame presented turns it on
+        /// again.
+        fn turn_off(&mut self) -> Result<()> {
+            if self.power == Power::Off {
+                return Ok(());
+            }
+            self.settle()?;
+            let mut req = atomic::AtomicModeReq::new();
+            req.add_property(self.crtc, self.active, property::Value::Boolean(false));
+            // Qualcomm's display driver sends no event for a commit that
+            // turns its CRTC off, so this one is made to return once it is
+            // done.
+            self.card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req).context("turn the display off")?;
+            self.power = Power::Off;
+            Ok(())
+        }
+
+        /// Switch a panel that came on again in its preferred mode to its
+        /// fastest. It is called once the backlight is on, which need not
+        /// wait the frames the switch takes.
+        fn speed_up(&mut self) -> Result<()> {
+            if self.slow {
+                self.settle()?;
+                self.to_fastest()?;
+                self.slow = false;
+            }
+            Ok(())
+        }
+    }
+}
+/// Drawing to a plain framebuffer (`/dev/graphics/fb0`), as a phone whose
+/// display driver is not Qualcomm's has: MediaTek's `mtkfb` exposes no DRM
+/// device, only the Linux framebuffer the bootloader left scanning out. The
+/// framebuffer keeps several frames in its virtual screen, so a frame is
+/// drawn into the one after the one showing and panned to when it is whole.
+#[cfg(target_os = "android")]
+pub mod fb {
+    use super::*;
+    use anyhow::{anyhow, bail, Context};
+    use std::fs::{File, OpenOptions};
+    use std::os::fd::AsRawFd;
+
+    /// Linux's framebuffer ioctls (linux/fb.h).
+    const FBIOGET_VSCREENINFO: libc::c_ulong = 0x4600;
+    const FBIOGET_FSCREENINFO: libc::c_ulong = 0x4602;
+    const FBIOPAN_DISPLAY: libc::c_ulong = 0x4606;
+
+    /// One colour's place in a pixel.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Bitfield {
+        offset: u32,
+        length: u32,
+        msb_right: u32,
+    }
+
+    /// `struct fb_var_screeninfo`, the screen as it may be changed.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default)]
+    struct VarScreeninfo {
+        xres: u32,
+        yres: u32,
+        xres_virtual: u32,
+        yres_virtual: u32,
+        xoffset: u32,
+        yoffset: u32,
+        bits_per_pixel: u32,
+        grayscale: u32,
+        red: Bitfield,
+        green: Bitfield,
+        blue: Bitfield,
+        trans: Bitfield,
+        nonstd: u32,
+        activate: u32,
+        height: u32,
+        width: u32,
+        accel_flags: u32,
+        pixclock: u32,
+        left_margin: u32,
+        right_margin: u32,
+        upper_margin: u32,
+        lower_margin: u32,
+        hsync_len: u32,
+        vsync_len: u32,
+        sync: u32,
+        vmode: u32,
+        rotate: u32,
+        colorspace: u32,
+        reserved: [u32; 4],
+    }
+
+    /// `struct fb_fix_screeninfo`, the screen as it is.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default)]
+    struct FixScreeninfo {
+        id: [u8; 16],
+        smem_start: libc::c_ulong,
+        smem_len: u32,
+        type_: u32,
+        type_aux: u32,
+        visual: u32,
+        xpanstep: u16,
+        ypanstep: u16,
+        ywrapstep: u16,
+        pad: u16,
+        line_length: u32,
+        mmio_start: libc::c_ulong,
+        mmio_len: u32,
+        accel: u32,
+        capabilities: u16,
+        reserved: [u16; 2],
+    }
+
+    fn ioctl<T>(fd: i32, request: libc::c_ulong, arg: &mut T) -> std::io::Result<()> {
+        let r = unsafe { libc::syscall(libc::SYS_ioctl, fd as libc::c_long, request as libc::c_long, arg as *mut T as libc::c_long) };
+        if r < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    /// The displayed framebuffer.
+    pub struct FbSurface {
+        file: File,
+        var: VarScreeninfo,
+        map: *mut u8,
+        len: usize,
+        w: u32,
+        h: u32,
+        line_length: usize,
+        /// How many frames the virtual screen holds, and the rows of each.
+        frames: usize,
+        frame_rows: u32,
+        back: usize,
+        red: Bitfield,
+        green: Bitfield,
+        blue: Bitfield,
+        alpha: Bitfield,
+        summary: String,
+    }
+
+    impl FbSurface {
+        pub fn open(path: &str) -> Result<Self> {
+            let file = OpenOptions::new().read(true).write(true).open(path).with_context(|| format!("open {path}"))?;
+            let fd = file.as_raw_fd();
+            let mut var = VarScreeninfo::default();
+            ioctl(fd, FBIOGET_VSCREENINFO, &mut var).context("read the framebuffer's screen info")?;
+            let mut fix = FixScreeninfo::default();
+            ioctl(fd, FBIOGET_FSCREENINFO, &mut fix).context("read the framebuffer's fixed screen info")?;
+            if var.bits_per_pixel != 32 {
+                bail!("{path} takes {} bits a pixel, and the pages are drawn in 32", var.bits_per_pixel);
+            }
+            let (w, h) = (var.xres, var.yres);
+            if w == 0 || h == 0 {
+                bail!("{path} names no size");
+            }
+            // A virtual screen taller than the visible one holds the frames
+            // the phone's own system draws ahead into; draw into them too.
+            let frames = if var.yres_virtual > var.yres { (var.yres_virtual / var.yres).clamp(1, 3) as usize } else { 1 };
+            let frame_rows = if frames > 1 { var.yres_virtual / frames as u32 } else { var.yres };
+            let line_length = fix.line_length as usize;
+            let len = if fix.smem_len > 0 { fix.smem_len as usize } else { line_length * var.yres_virtual as usize };
+            if line_length < w as usize * 4 || len < line_length * h as usize {
+                bail!("{path} holds no whole frame: a row of {line_length} bytes over {len} bytes");
+            }
+            let map = unsafe { libc::mmap(std::ptr::null_mut(), len, libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED, fd, 0) };
+            if map == libc::MAP_FAILED {
+                return Err(std::io::Error::last_os_error()).context("map the framebuffer");
+            }
+            let summary = format!(
+                "{path} {w}x{h}, {} bpp, {frames} frame(s) of {frame_rows} rows, {line_length} bytes a row",
+                var.bits_per_pixel
+            );
+            let (red, green, blue, alpha) = (var.red, var.green, var.blue, var.trans);
+            Ok(FbSurface {
+                file,
+                var,
+                map: map.cast::<u8>(),
+                len,
+                w,
+                h,
+                line_length,
+                frames,
+                frame_rows,
+                back: 0,
+                red,
+                green,
+                blue,
+                alpha,
+                summary,
+            })
+        }
+
+        fn channel(bitfield: Bitfield, value: u8) -> u32 {
+            if bitfield.length == 0 {
+                return 0;
+            }
+            let length = bitfield.length.min(32);
+            let max = if length == 32 { u32::MAX } else { (1u32 << length) - 1 };
+            let value = if length >= 8 { u32::from(value) } else { (u32::from(value) * max + 127) / 255 };
+            (value & max) << bitfield.offset
+        }
+
+        fn draw(&mut self, canvas: &Canvas) -> Result<()> {
+            if (canvas.w, canvas.h) != (self.w, self.h) {
+                return Err(anyhow!("canvas {}x{} does not match the display {}x{}", canvas.w, canvas.h, self.w, self.h));
+            }
+            let (w, h, line_length, frames, frame_rows, back) = (self.w, self.h, self.line_length, self.frames, self.frame_rows, self.back);
+            let (red, green, blue, alpha) = (self.red, self.green, self.blue, self.alpha);
+            let base = if frames > 1 { back * frame_rows as usize * line_length } else { 0 };
+            let row = w as usize * 4;
+            let dst = unsafe { std::slice::from_raw_parts_mut(self.map, self.len) };
+            for y in 0..h as usize {
+                let src = &canvas.data[y * row..(y + 1) * row];
+                let start = base + y * line_length;
+                let out = &mut dst[start..start + row];
+                for (o, s) in out.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
+                    let value = Self::channel(red, s[0]) | Self::channel(green, s[1]) | Self::channel(blue, s[2]) | Self::channel(alpha, s[3]);
+                    *o = value.to_ne_bytes();
+                }
+            }
+            Ok(())
+        }
+    }
+
+    impl Surface for FbSurface {
+        fn size(&self) -> (u32, u32) {
+            (self.w, self.h)
+        }
+
+        fn present(&mut self, canvas: &Canvas) -> Result<()> {
+            self.draw(canvas)?;
+            if self.frames > 1 {
+                self.var.yoffset = self.back as u32 * self.frame_rows;
+                let fd = self.file.as_raw_fd();
+                ioctl(fd, FBIOPAN_DISPLAY, &mut self.var).context("show the framebuffer's next frame")?;
+                self.back = (self.back + 1) % self.frames;
+            }
+            Ok(())
+        }
+
+        /// Every pan waits for the display to take the frame it shows, so
+        /// there is nothing left to wait for.
+        fn settle(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        fn describe(&self) -> &str {
+            &self.summary
+        }
+    }
+
+    impl Drop for FbSurface {
+        fn drop(&mut self) {
+            unsafe { libc::munmap(self.map.cast(), self.len) };
         }
     }
 }

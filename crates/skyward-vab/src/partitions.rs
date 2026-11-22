@@ -36,6 +36,69 @@ pub fn mount_point(base: &str) -> PathBuf {
     }
 }
 
+/// The partitions a phone with one slot keeps its installed system in, in
+/// the order init reads their build properties.
+pub const LEGACY: [&str; 5] = ["system", "system_ext", "vendor", "odm", "product"];
+
+/// Where a partition of a phone with one slot is mounted: the recovery
+/// keeps /system for its own ramdisk, so the system partition goes to
+/// /mnt/system, and the rest go where the ramdisk's links from the top of
+/// its tree lead, which is where the phone keeps them.
+fn legacy_point(base: &str) -> PathBuf {
+    if base == "system" {
+        return PathBuf::from("/mnt/system");
+    }
+    let top = Path::new("/").join(base);
+    fs::canonicalize(&top).unwrap_or(top)
+}
+
+/// The partitions of a phone with one slot that show, mounted.
+pub fn mounted_partitions_legacy() -> Result<Vec<Mounted>> {
+    let by_name = Path::new(BY_NAME);
+    let mut out = Vec::new();
+    for base in LEGACY {
+        let point = legacy_point(base);
+        if let Some(visible) = mount::visible(&point)? {
+            out.push(Mounted { partition: base.to_string(), device: by_name.join(base), mount_point: point, filesystem: visible.filesystem });
+        }
+    }
+    Ok(out)
+}
+
+/// Mount the partitions a phone with one slot keeps its installed system
+/// in, all read-only, each where the phone mounts it. A partition the phone
+/// does not have is passed over.
+pub fn mount_legacy_partitions() -> Result<Mounts> {
+    let by_name = Path::new(BY_NAME);
+    let shown = mounted_partitions_legacy()?;
+    let mut mounts = Mounts::default();
+    for base in LEGACY {
+        if let Some(m) = shown.iter().find(|m| m.partition == base) {
+            mounts.partitions.push(m.clone());
+            continue;
+        }
+        let device = by_name.join(base);
+        if !device.exists() {
+            continue;
+        }
+        let point = legacy_point(base);
+        fs::create_dir_all(&point).with_context(|| format!("create {}", point.display()))?;
+        let filesystem = mount::mount_ro_over(&device, &point).with_context(|| format!("mount {base}"))?.to_string();
+        mounts.partitions.push(Mounted { partition: base.to_string(), device, mount_point: point, filesystem });
+    }
+    Ok(mounts)
+}
+
+/// Unmount what [`mount_legacy_partitions`] mounted.
+pub fn unmount_legacy_partitions() -> Result<()> {
+    let mut shown = mounted_partitions_legacy()?;
+    shown.reverse();
+    for m in shown {
+        mount::umount_over(&m.mount_point).with_context(|| format!("unmount {}", m.mount_point.display()))?;
+    }
+    Ok(())
+}
+
 fn super_device() -> PathBuf {
     Path::new(BY_NAME).join("super")
 }

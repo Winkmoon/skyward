@@ -267,7 +267,7 @@ fn main() -> Result<()> {
         Cmd::Update => update(),
         #[cfg(target_os = "android")]
         Cmd::Merge => {
-            let slot = booted_slot()?;
+            let slot = booted_slot()?.context("not an A/B phone")?;
             let start = skyward_vab::standing(slot)? == skyward_vab::Standing::Waiting;
             let end = merge::run(slot, start, &mut |m| println!("{m:?}"))?;
             println!("ended {end:?}");
@@ -275,7 +275,10 @@ fn main() -> Result<()> {
         }
         Cmd::Identify { file } => identify(&file),
         Cmd::Mount => {
-            let mounts = skyward_vab::mount_partitions(booted_slot()?)?;
+            let mounts = match booted_slot()? {
+                Some(slot) => skyward_vab::mount_partitions(slot)?,
+                None => skyward_vab::mount_legacy_partitions()?,
+            };
             for d in &mounts.damaged {
                 println!("damaged: {d}");
             }
@@ -284,11 +287,17 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Umount => skyward_vab::unmount_partitions(booted_slot()?),
+        Cmd::Umount => match booted_slot()? {
+            Some(slot) => skyward_vab::unmount_partitions(slot),
+            None => skyward_vab::unmount_legacy_partitions(),
+        },
         #[cfg(target_os = "android")]
         Cmd::Services { config } => {
             let slot = booted_slot()?;
-            let props = skyward_info::installed_props(slot)?;
+            let props = match slot {
+                Some(slot) => skyward_info::installed_props(slot)?,
+                None => skyward_info::installed_props_legacy()?,
+            };
             let services: Vec<Started> = DeviceConfig::load(&config)?.services.into_iter().filter(|s| s.runs_on(&props)).map(Started::from).collect();
             let libraries = secure::libraries()?;
             services::start(&services, libraries.as_deref())?;
@@ -457,14 +466,14 @@ fn main() -> Result<()> {
     }
 }
 
-fn booted_slot() -> Result<skyward_vab::Slot> {
-    skyward_vab::current_slot()?.context("not an A/B device")
+fn booted_slot() -> Result<Option<skyward_vab::Slot>> {
+    skyward_vab::current_slot()
 }
 
 fn lp(super_dev: &Path, slot: Option<u32>) -> Result<()> {
     let slot = match slot {
         Some(n) => n,
-        None => booted_slot()?.number(),
+        None => booted_slot()?.context("not an A/B phone")?.number(),
     };
     let md = skyward_lp::read(super_dev, slot)?;
     let g = md.geometry;
@@ -523,10 +532,13 @@ fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
 /// among the phone's partitions: where what the partitions say could not
 /// be made out, the phone's devices are up before that is said.
 #[cfg(target_os = "android")]
-fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Found>) -> Result<()> {
+fn bring_up(cfg: &DeviceConfig, slot: Option<skyward_vab::Slot>, found: Result<keys::Found>) -> Result<()> {
     let nodes = skyward_sys::ueventd::apply()?;
     skyward_sys::kmsg(&format!("{nodes} device nodes given the owner their phone describes"))?;
-    let props = skyward_info::installed_props(slot)?;
+    let props = match slot {
+        Some(slot) => skyward_info::installed_props(slot)?,
+        None => skyward_info::installed_props_legacy()?,
+    };
     adopt_installed_version(&props)?;
     // Without logd the phone's own programs still run, and only what they
     // log is lost, so why it did not start goes to the kernel log.
@@ -843,8 +855,12 @@ fn recovery() -> Result<()> {
 /// stay usable when super cannot be mounted, as after it is wiped, so the
 /// reason goes to the kernel log instead.
 #[cfg(target_os = "android")]
-fn prepare(cfg: &DeviceConfig, slot: skyward_vab::Slot) -> Result<Vec<skyward_config::Service>> {
-    match skyward_vab::mount_partitions(slot) {
+fn prepare(cfg: &DeviceConfig, slot: Option<skyward_vab::Slot>) -> Result<Vec<skyward_config::Service>> {
+    let mounted = match slot {
+        Some(slot) => skyward_vab::mount_partitions(slot),
+        None => skyward_vab::mount_legacy_partitions(),
+    };
+    match mounted {
         Ok(mounts) => {
             for d in &mounts.damaged {
                 skyward_sys::kmsg(&format!("super: {d}"))?;
@@ -960,7 +976,7 @@ fn slot() -> Result<()> {
 }
 
 fn update() -> Result<()> {
-    let slot = booted_slot()?;
+    let slot = booted_slot()?.context("not an A/B phone")?;
     println!("standing {:?}", skyward_vab::standing(slot)?);
     for kind in ["snapshot", "snapshot-merge", "user"] {
         println!("target {kind} {:?}", skyward_block::dm::target_version(kind)?);

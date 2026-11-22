@@ -41,7 +41,7 @@ use skyward_ui::app::{
     INSTALL_UNFINISHED, USB_DRIVE,
 };
 use skyward_ui::settings::Keeper;
-use skyward_ui::surface::kms::KmsSurface;
+use skyward_ui::surface::{fb::FbSurface, kms::KmsSurface};
 use skyward_ui::{Canvas, Fonts, Lang, Surface};
 use skyward_vab::{Merge, Standing};
 use std::collections::{BTreeSet, VecDeque};
@@ -91,28 +91,38 @@ struct Backlight {
 
 impl Backlight {
     fn open() -> Result<Self> {
-        let mut dirs: Vec<PathBuf> = fs::read_dir("/sys/class/backlight")
-            .context("read /sys/class/backlight")?
-            .map(|e| e.map(|e| e.path()))
-            .collect::<std::io::Result<_>>()?;
-        dirs.sort();
-        // Qualcomm panels expose panel0-backlight; take it when present.
-        let dir = dirs
-            .iter()
-            .find(|d| d.file_name().is_some_and(|n| n == "panel0-backlight"))
-            .or(dirs.first())
-            .ok_or_else(|| anyhow!("no backlight device"))?
-            .clone();
-        let read = |name: &str| -> Result<u32> {
-            fs::read_to_string(dir.join(name))
-                .with_context(|| format!("read {}/{name}", dir.display()))?
-                .trim()
-                .parse()
-                .with_context(|| format!("parse {name}"))
-        };
-        let top = normal_max(read("max_brightness")?)?;
-        let level = read("brightness")?;
-        Ok(Backlight { path: dir.join("brightness"), top, level })
+        // Qualcomm panels appear on their own class, and give the level of
+        // their normal maximum in their device tree.
+        if let Ok(dirs) = fs::read_dir("/sys/class/backlight") {
+            let mut dirs: Vec<PathBuf> = dirs.map(|e| e.map(|e| e.path())).collect::<std::io::Result<_>>()?;
+            dirs.sort();
+            if let Some(dir) = dirs.iter().find(|d| d.file_name().is_some_and(|n| n == "panel0-backlight")).or(dirs.first()) {
+                let dir = dir.clone();
+                let top = normal_max(Self::read(&dir, "max_brightness")?)?;
+                let level = Self::read(&dir, "brightness")?;
+                return Ok(Backlight { path: dir.join("brightness"), top, level });
+            }
+        }
+        // A panel whose backlight is an LED, as MediaTek's is, keeps the
+        // whole range at the panel's normal maximum.
+        for name in ["lcd-backlight", "backlight", "lcd_backlight"] {
+            let dir = Path::new("/sys/class/leds").join(name);
+            if dir.is_dir() {
+                let top = Self::read(&dir, "max_brightness")?.max(1);
+                let level = Self::read(&dir, "brightness")?;
+                return Ok(Backlight { path: dir.join("brightness"), top, level });
+            }
+        }
+        anyhow::bail!("no backlight device")
+    }
+
+    fn read(dir: &Path, name: &str) -> Result<u32> {
+        fs::read_to_string(dir.join(name))
+            .with_context(|| format!("read {}/{name}", dir.display()))?
+            .trim()
+            .parse()
+            .with_context(|| format!("parse {name}"))
+    }
     }
 
     /// Light the panel at `level` of its normal maximum, or turn it off
@@ -1117,7 +1127,9 @@ struct Pages<'a> {
     info: skyward_info::DeviceInfo,
     unread: Untaken,
     fonts: Fonts,
-    surface: KmsSurface,
+    /// The display: KMS where the phone's driver offers it, else the plain
+    /// framebuffer the display driver left scanning out.
+    surface: Box<dyn Surface>,
     /// The frame last drawn.
     screen: Canvas,
     inputs: Inputs,
@@ -1238,7 +1250,15 @@ impl<'a> Pages<'a> {
         untaken(&mut unread.battery, "the battery", battery.as_ref().err())?;
         let info = skyward_info::collect_with(cfg, battery.unwrap_or_default())?;
         let fonts = Fonts::load(font, 0, mono)?;
-        let mut surface = KmsSurface::open("/dev/dri/card0")?;
+        // Qualcomm's display driver is driven through KMS; MediaTek's is a
+        // plain framebuffer, and the same pages are drawn to it.
+        let mut surface: Box<dyn Surface> = match KmsSurface::open("/dev/dri/card0") {
+            Ok(surface) => Box::new(surface) as Box<dyn Surface>,
+            Err(e) => {
+                eprintln!("KMS display not used: {e:#}");
+                Box::new(FbSurface::open("/dev/graphics/fb0")?) as Box<dyn Surface>
+            }
+        };
         let (w, h) = surface.size();
         // A touch controller that follows the panel wakes as the panel goes
         // from rest to running, and at no other time. The recovery service

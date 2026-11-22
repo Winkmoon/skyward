@@ -33,7 +33,7 @@ pub struct Found {
 /// `libraries` is where the libraries the phone's partitions were built
 /// against are opened, on a phone that carries them as a bundle of their
 /// own: each of its programs is given the folder among its own.
-pub fn found(slot: skyward_vab::Slot, libraries: Option<&Path>) -> Result<Found> {
+pub fn found(slot: Option<skyward_vab::Slot>, libraries: Option<&Path>) -> Result<Found> {
     let mut phone = read(slot, libraries)?;
     let unnamed = naming::steps(&phone)?;
     if !unnamed.is_empty() {
@@ -47,13 +47,19 @@ pub fn found(slot: skyward_vab::Slot, libraries: Option<&Path>) -> Result<Found>
 /// read with the properties its init has as it reads them: the
 /// bootloader's, with those the recovery has set beside them as the
 /// phone's init sets them, and the installed build's. `libraries` is as
-/// [`found`] takes it.
-fn read(slot: skyward_vab::Slot, libraries: Option<&Path>) -> Result<Phone> {
-    let properties = skyward_info::installed_props(slot)?;
-    let mounted = skyward_vab::mounted_partitions(slot)?;
+/// [`found`] takes it. A phone with one slot keeps its partitions named
+/// without a slot suffix.
+fn read(slot: Option<skyward_vab::Slot>, libraries: Option<&Path>) -> Result<Phone> {
+    let (properties, mounted) = match slot {
+        Some(slot) => (skyward_info::installed_props(slot)?, skyward_vab::mounted_partitions(slot)?),
+        None => (skyward_info::installed_props_legacy()?, skyward_vab::mounted_partitions_legacy()?),
+    };
     let mut partitions = Vec::new();
     for name in PARTITIONS {
-        let named = format!("{name}{}", slot.suffix());
+        let named = match slot {
+            Some(slot) => format!("{name}{}", slot.suffix()),
+            None => name.to_string(),
+        };
         let partition = mounted.iter().find(|m| m.partition == named).with_context(|| format!("{named} is not mounted"))?;
         partitions.push(Partition::mounted(name, &partition.mount_point));
     }

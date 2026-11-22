@@ -199,7 +199,7 @@ impl SystemProps {
         }
         let read = match skyward_vab::current_slot()? {
             Some(slot) => installed_props(slot),
-            None => Ok(HashMap::new()),
+            None => installed_props_legacy(),
         };
         let why = read.as_ref().err().map(|e| format!("{e:#}"));
         if PROPS_UNREAD.lock().expect("nothing panics while it is held").untold(why.as_deref()) {
@@ -230,14 +230,25 @@ const BOOT_PROPS: &str = "ro.boot.";
 /// after them, as Xiaomi's odm imports what each hardware version sets; so
 /// they come first here too, the same in a recovery as in the system.
 pub fn installed_props(slot: Slot) -> Result<HashMap<String, String>> {
-    let base = |m: &skyward_vab::Mounted| -> String {
-        m.partition.strip_suffix(slot.suffix()).expect("mounted partitions carry the slot suffix").to_string()
-    };
-    let mut parts = skyward_vab::mounted_partitions(slot)?;
-    parts.sort_by_key(|m| PROP_ORDER.iter().position(|b| *b == base(m)).unwrap_or(PROP_ORDER.len()));
+    let parts = skyward_vab::mounted_partitions(slot)?
+        .into_iter()
+        .map(|m| (m.partition.strip_suffix(slot.suffix()).expect("mounted partitions carry the slot suffix").to_string(), m))
+        .collect();
+    props_of(parts)
+}
+
+/// The installed system's build properties on a phone that keeps one
+/// system, in partitions named without a slot.
+pub fn installed_props_legacy() -> Result<HashMap<String, String>> {
+    props_of(skyward_vab::mounted_partitions_legacy()?.into_iter().map(|m| (m.partition.clone(), m)).collect())
+}
+
+/// `parts`, each named by its base partition, read in init's order.
+fn props_of(mut parts: Vec<(String, skyward_vab::Mounted)>) -> Result<HashMap<String, String>> {
+    parts.sort_by_key(|(base, _)| PROP_ORDER.iter().position(|b| *b == base.as_str()).unwrap_or(PROP_ORDER.len()));
     let mut props: HashMap<String, String> = skyward_sys::props(BOOT_PROPS).into_iter().collect();
-    for m in &parts {
-        let files: &[&str] = match base(m).as_str() {
+    for (base, m) in &parts {
+        let files: &[&str] = match base.as_str() {
             "system" => &["system/build.prop"],
             "vendor" => &["default.prop", "build.prop"],
             _ => &["etc/build.prop"],

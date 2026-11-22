@@ -23,9 +23,20 @@ const WIPE_PACKAGE: Range<u64> = 16 * 1024..32 * 1024;
 /// two Android's own recovery formats it as.
 pub const REFORMATS: [&str; 2] = ["ext4", "f2fs"];
 
-/// The misc partition, shared by the bootloader, Android and recovery.
+/// The misc partition, shared by the bootloader, Android and recovery. A
+/// phone whose table names it otherwise keeps the bootloader message at the
+/// start of the partition it does name: MediaTek's phones call it `para`.
 pub fn misc() -> PathBuf {
-    Path::new(skyward_block::BY_NAME).join("misc")
+    let by_name = Path::new(skyward_block::BY_NAME);
+    let misc = by_name.join("misc");
+    if misc.exists() {
+        return misc;
+    }
+    let para = by_name.join("para");
+    if para.exists() {
+        return para;
+    }
+    misc
 }
 
 /// What the bootloader control block asks for: the command the bootloader

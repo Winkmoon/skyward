@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 /// Where the phone's own partitions keep the table.
 pub const FILES: [&str; 2] = ["/vendor/etc/fstab.qcom", "/odm/etc/fstab.qcom"];
 
+/// The folders a phone keeps its table files in.
+const FOLDERS: [&str; 2] = ["/vendor/etc", "/odm/etc"];
+
 /// One filesystem the phone knows about.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -52,10 +55,28 @@ pub fn entries(text: &str) -> Vec<Entry> {
 }
 
 /// Every entry of the phone's own table, read from wherever the table is.
+/// A phone names its table after its hardware, as MediaTek's `fstab.mt6771`
+/// and Qualcomm's `fstab.qcom`: every file in the folders a phone keeps its
+/// tables in is read, but the alternative files a first-stage mount of the
+/// same table may also leave there.
 fn table() -> Result<Vec<Entry>> {
+    let mut files: Vec<PathBuf> = FILES.iter().map(PathBuf::from).collect();
+    for folder in FOLDERS {
+        let Ok(dir) = std::fs::read_dir(folder) else { continue };
+        for entry in dir {
+            let path = entry?.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.starts_with("fstab") || name.contains(".pre_erofs") || files.iter().any(|f| f == &path) {
+                continue;
+            }
+            files.push(path);
+        }
+    }
+    files.sort();
     let mut out = Vec::new();
-    for file in FILES {
-        let text = match std::fs::read_to_string(file) {
+    for file in files {
+        let file = file.to_string_lossy().into_owned();
+        let text = match std::fs::read_to_string(&file) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e).with_context(|| format!("read {file}")),

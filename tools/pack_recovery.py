@@ -60,17 +60,23 @@ TASK_PROFILES = "system/etc/task_profiles.json"
 MTP_RC = "system/etc/init/skyward-mtp.rc"
 BUILD_VERSION = ["ro.build.version.release", "ro.build.version.security_patch",
                  "ro.vendor.build.security_patch"]
-# TWRP leftovers: the third-party tree, and its bolted-on FBE and WiFi
-# scripts, which Skyward replaces with its own HAL orchestration and WLAN
-# bring-up.
+# TWRP leftovers: the third-party tree, its bolted-on FBE and WiFi scripts,
+# which Skyward replaces with its own HAL orchestration and WLAN bring-up,
+# and the shell utilities Skyward does not run.
 DROP_NAMES = {
     "twres", "twrp_ramdisk-timestamp", "relink_binaries-timestamp",
     "relink_libraries-timestamp", "relink_vendor_hw_binaries-timestamp",
     "system/etc/twrp.flags", "system/etc/twrp-wifi",
     "system/bin/twrp-wifi.sh", "system/bin/twrp-fbedec-prep.sh",
     "system/bin/twrp-fbedec-ui.sh", "system/bin/twrp_fbedec",
-    "system/bin/twrp_fbedec2",
+    "system/bin/twrp_fbedec2", "system/bin/busybox", "system/bin/bash",
+    "system/bin/nano",
 }
+
+# The room LK reserves for the ramdisk at 0x55000000 (ramdisk_addr_mb): a
+# larger ramdisk runs into LK's own memory at 0x57000000, and LK resets the
+# phone instead of starting the kernel.
+LK_RAMDISK_ROOM = 0x2000000
 EMPTY_FILES = {
     "init.recovery.mt6771.rc": "# The TWRP FBE wrapper lived here; Skyward starts\n# the phone's own key programs from its init scripts.\n",
     "init.recovery.trustonic.rc": "# The TWRP Trustonic setup lived here.\n",
@@ -142,12 +148,14 @@ def build_boot_image(d, ramdisk):
     struct.pack_into("<I", hdr, 1632, len(d["recovery_dtbo"]))
     struct.pack_into("<I", hdr, 1648, len(d["dtb"]))
     # The id is the kernel's and ramdisk's own SHA-1, as the AOSP mkbootimg
-    # names it. Unlocked bootloaders do not check it.
+    # names it. Unlocked bootloaders do not check it. The field is thirty-two
+    # bytes and a SHA-1 is twenty, so the rest stays zero: writing twenty
+    # bytes over it would shorten the header.
     sha = hashlib.sha1()
     for part in (d["kernel"], ramdisk, d["second"]):
         sha.update(part)
         sha.update(struct.pack("<I", len(part)))
-    hdr[576:608] = sha.digest()
+    hdr[576:596] = sha.digest()
     page = d["page_size"]
     out = bytearray()
     out += hdr
@@ -344,6 +352,12 @@ def edit_ramdisk(ramdisk, args):
     compressed = gzip.compress(archive, 9, mtime=0)
     print("new ramdisk: %d entries, %d bytes of cpio, %d bytes gzip" %
           (len(entries), len(archive), len(compressed)))
+    if len(compressed) > LK_RAMDISK_ROOM:
+        die("the ramdisk is %d bytes gzip, past the %d bytes LK reserves for "
+            "it at 0x55000000: it would run into LK's own memory at "
+            "0x57000000 and LK would reset the phone instead of starting the "
+            "kernel" % (len(compressed), LK_RAMDISK_ROOM))
+    print("ramdisk room left: %d bytes" % (LK_RAMDISK_ROOM - len(compressed)))
     installed = [e.name for e in entries if e.name.startswith("skyward/")]
     print("skyward files: %s" % ", ".join(sorted(installed)))
     return compressed

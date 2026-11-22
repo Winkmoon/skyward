@@ -20,3 +20,9 @@ corner_radius = 0
 # vendor_boot or vendor_dlkm on this build.
 [modules]
 sources = ["vendor"]
+
+# The partitions the phone's own programs use where its table mounts them.
+# The secure world keeps its registry on persist (the key service reads it
+# there), and the WLAN driver's calibration is on nvdata.
+[partitions]
+mounted = ["persist", "nvdata"]
